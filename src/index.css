@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #06060b;
+  --color-surface: #0e0e17;
+  --color-surface-raised: #15151f;
+  --color-border: #24242f;
+  --color-text: #e6e6ea;
+  --color-text-muted: #93939f;
+  --color-accent: #a855f7;
+  --color-accent-soft: #7c3aed;
+  --color-accent-glow: #c084fc;
+
+  --font-sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  code,
+  pre {
+    font-family: var(--font-mono);
+  }
+}
+
+@utility radial-glow {
+  background-image: radial-gradient(
+    circle at 50% 0%,
+    color-mix(in oklab, var(--color-accent-glow) 22%, transparent),
+    transparent 60%
+  );
+}
+
+@keyframes swarm-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.swarm-path {
+  animation: swarm-flow 1s linear infinite;
+}

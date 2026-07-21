@@ -1,0 +1,28 @@
+{
+  "name": "nemzilla-studio",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch server.ts",
+    "build": "tsc -b && vite build",
+    "start": "NODE_ENV=production tsx server.ts",
+    "preview": "vite preview",
+    "test:sse": "tsx scripts/verify-agent-stream.ts"
+  },
+  "dependencies": {
+    "hono": "^4.10.5",
+    "solid-js": "^1.9.13"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^2.0.11",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.13.2",
+    "playwright": "^1.61.1",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.20.6",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1",
+    "vite-plugin-solid": "^2.11.12"
+  }
+}

@@ -6,7 +6,7 @@
 
 ## Active UOW Status
 - **Current UOW**: UOW-05 - Ecosystem Portal & Production Hardening
-- **Active Task**: Task 5.1
+- **Active Task**: UOW-05 complete — ready for next UOW
 
 ---
 
@@ -37,9 +37,9 @@
 - [x] Task 4.3 - (re-scoped) Build `src/lib/swarmStore.ts` to parse `/api/agent/stream` SSE events into live per-agent status (idle/thinking/active/completed/error) and per-edge activity; wired into `SwarmCanvas.tsx`. Original 4.3 scope (click-to-view reasoning log) deferred — see uow-04.md Risk/Debt.
 - [x] Task 4.4 - Doc update, journal entry, & UOW-04 closure.
 
-### [ ] UOW-05 - Ecosystem Portal & Production Hardening
-- [ ] Task 5.1 - Build top navigation bar and Ecosystem Quick-Launch dock (`robert.nemzilla.net`, `streaming.nemzilla.net`, `grid.nemzilla.net`).
-- [ ] Task 5.2 - Apply strict security headers middleware (CSP, X-Frame-Options DENY, HSTS).
-- [ ] Task 5.3 - Validate production build and execute Playwright E2E verification.
-- [ ] Task 5.4 - Doc update, journal entry, & UOW-05 closure.
+### [x] UOW-05 - Ecosystem Portal & Production Hardening
+- [x] Task 5.1 - Build top navigation bar and Ecosystem Quick-Launch dock (`robert.nemzilla.net`, `streaming.nemzilla.net`, `grid.nemzilla.net`).
+- [x] Task 5.2 - Apply strict security headers middleware (CSP, X-Frame-Options DENY, HSTS).
+- [x] Task 5.3 - Validate production build and execute Playwright E2E verification.
+- [x] Task 5.4 - Doc update, journal entry, & UOW-05 closure.
 

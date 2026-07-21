@@ -101,3 +101,31 @@
   click-to-view-reasoning feature needs that added first.
 - **Next Milestone:** UOW-05 — Ecosystem Portal & Production Hardening.
 
+### UOW-05 Sync — Ecosystem Portal & Production Hardening — 2026-07-21
+- **Nav:** `src/components/EcosystemNav.tsx` — top bar with brand mark and a three-link
+  ecosystem quick-launch dock (`robert` / `streaming` / `grid` `.nemzilla.net`), mounted above
+  the main content in `App.tsx`; the same three targets are also reachable via `nemzilla-cli`'s
+  existing `launch [target]` command.
+- **Security Headers:** `src/server/middleware/securityHeaders.ts` — no-op in dev
+  (`NODE_ENV !== 'production'`), strict CSP + `X-Frame-Options: DENY` + HSTS
+  (`includeSubDomains; preload`) + `nosniff` + `strict-origin-when-cross-origin` referrer
+  policy in prod, wired as global middleware in `src/server/app.ts`.
+- **Production Routing Bug (found + fixed this UOW):** `app.ts`'s `.basePath('/api')` call
+  scoped every route registered on that Hono instance afterward — including the static-file
+  serving routes `server.ts` adds for production — under `/api/*`. Real `NODE_ENV=production`
+  boot returned 404 on `GET /`; the built SPA was completely unreachable, and (as a side
+  effect) `securityHeaders()` was silently prod-scoped to API responses only, never the actual
+  page load. Fixed by dropping `.basePath()` in favor of explicit `/api/health` /
+  `/api/agent/stream` paths on an unscoped `app` — no client-side (`hc<AppType>`) changes
+  needed. Verified via a real prod boot: `GET /` 200 with all headers + SPA root div,
+  `GET /assets/*` 200, `GET /api/health` 200, arbitrary deep route 200 via SPA fallback.
+- **Verification:** `tsc -b` clean, `npm run build` clean, `npm run test:sse` clean, fresh
+  Playwright driver run (`help metrics "launch grid" triad clear`) zero console errors —
+  screenshots confirm the nav bar renders correctly alongside the swarm canvas and terminal.
+- **Risk/Debt:** No committed automated check exercises the production (`NODE_ENV=production`,
+  built `dist/`) boot path — this UOW's prod verification was manual curl testing. A follow-up
+  `verify-prod-boot.ts` (mirroring `verify-agent-stream.ts`) would catch a routing regression
+  like the one found here automatically.
+- **UOW-05 complete.** Roadmap has no further UOWs queued — next milestone is whatever the
+  user scopes next.
+

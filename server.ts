@@ -12,7 +12,7 @@ async function main() {
     app.use('/*', serveStatic({ root: './dist' }))
     app.get('*', serveStatic({ path: './dist/index.html' }))
 
-    serve({ fetch: app.fetch, port }, (info) => {
+    serve({ fetch: app.fetch, port, hostname: '0.0.0.0' }, (info) => {
       console.log(`NemZilla Studio listening on http://localhost:${info.port}`)
     })
     return

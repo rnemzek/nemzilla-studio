@@ -1,5 +1,16 @@
 # AgentZ Studio SDK & Sandbox Architecture Specification
 
+## Module / Layer,Key Features Built & Shipped
+- 🛡️ Sandboxed Runtime,CSP-isolated dynamic iframe container (<AppPreview/>) rendering token-by-token code streams.
+- ⚡ Multi-Agent Swarm,Planner -> Architect -> LeadDev -> Reviewer live token execution telemetry on <SwarmCanvas/>.
+- 🌐 Dual-Engine Micro-Apps,"Engine A (Synthetic state, rules, HITL approvals) & Engine B (Live Action Kit: MLB, Weather, Meals)."
+- ⚖️ Governance Policy Engine,"System ceilings ($500 cap, 20 API calls/min) + customizable user auto-approve thresholds ($250)."
+- 🔐 Cryptographic Audit Ledger,"Non-blocking ring-buffer, SHA-256 Merkle Hash Chain verified on client via Web Crypto API."
+- 👀 Concurrency & Spectator Mode,Single-active builder lock on Railway container resources + live read-only SSE spectator streaming.
+- 📖 AgentZ SDK Bible Modal,Interactive inline Markdown reader serving .codex/AGENTZ-STUDIO-SDK.md live off disk with all ASCII diagrams.
+- 💾 Preset Cookbook & Archiving,Flagship preset scenarios + custom user recipe modal saving to localStorage & .codex/demos/.
+- ☰ Command Center Drawer,Unified slide-out navigation header with rich micro-app feature cards and responsive layouts.
+
 ## 1. Executive Summary & Vision
 The **AgentZ Studio Sandbox** is a living, interactive demonstration of autonomous software creation, real-time API orchestration, and policy-driven governance. 
 

@@ -1,6 +1,8 @@
 import Terminal from './components/Terminal.tsx'
 import SwarmCanvas from './components/SwarmCanvas.tsx'
 import EcosystemNav from './components/EcosystemNav.tsx'
+import AppPreview from './components/AppPreview.tsx'
+import AuditLedgerPanel from './components/AuditLedgerPanel.tsx'
 
 function App() {
   return (
@@ -14,7 +16,11 @@ function App() {
           </p>
         </div>
         <SwarmCanvas />
-        <Terminal />
+        <div class="grid w-full max-w-7xl grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
+          <Terminal />
+          <AppPreview />
+          <AuditLedgerPanel />
+        </div>
       </main>
     </div>
   )

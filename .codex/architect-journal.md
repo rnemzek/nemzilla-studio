@@ -129,3 +129,166 @@
 - **UOW-05 complete.** Roadmap has no further UOWs queued — next milestone is whatever the
   user scopes next.
 
+### UOW-06 Sync — AgentZ Studio Sandbox Preview Engine — 2026-07-22
+- **Deviation from spec (architect-directed):** Literal `srcdoc` would inherit UOW-05's strict
+  prod CSP (`frame-ancestors 'none'`, `script-src 'self'`), blocking the iframe from rendering at
+  all — same works-in-dev/breaks-in-prod class as UOW-05's own routing bug. Built as directed:
+  a same-origin `GET /sandbox-frame` route with its own scoped CSP instead.
+- **Route:** `src/server/routes/sandboxFrame.ts` serves a bootstrap shim; `securityHeaders.ts`
+  exempts that one path (its `c.header()` calls run after the route handler's, so without the
+  exemption the strict global CSP would silently clobber the route's own in prod).
+- **Template:** `src/lib/sandboxTemplate.ts` — `buildSandboxDocument()` wraps snippets in an
+  envelope (Tailwind CDN, Inter font, `window.onerror`/`unhandledrejection` -> postMessage).
+- **Store:** `src/lib/sandboxStore.ts` — `ready -> code -> rendered/error` postMessage handshake;
+  code changes force a cache-busted iframe reload (`document.write` tears down listeners, so a
+  second write on the same load can't be heard without one).
+- **Isolation:** iframe stays `sandbox="allow-scripts"` (no `allow-same-origin`) — opaque origin
+  regardless of same-origin URL; the route's permissive CSP is secondary, not the real boundary.
+- **Verification:** `tsc -b` clean, `npm run build` clean, real `NODE_ENV=production` boot
+  confirmed both CSPs coexist (main app fully strict, `/sandbox-frame` scoped-permissive),
+  Playwright confirmed Tailwind/Inter render correctly inside the sandboxed frame, zero console
+  errors on the existing terminal/swarm smoke run.
+- **Risk/Debt:** No automated check for `/sandbox-frame` yet (manual verification only, same gap
+  UOW-05 noted for prod-boot generally); `setCode()` has no real generation source wired in yet
+  (demo snippet only); updates are full-reload, not flicker-free.
+- **Next Milestone:** whatever the user scopes next.
+
+### UOW-07 Sync — AgentZ Dynamic App Generator & Hybrid Action Engine — 2026-07-22
+- **Pre-flight fixes (architect-directed):** Renamed `AGENTZ-STUDIO-SDK.md.bak` -> `.md` (repo
+  state now matches "locked in"). Confirmed no LLM SDK/API key exists anywhere in this repo, so
+  kept generation fully simulated/deterministic rather than wiring a real model call — consistent
+  with every other agent step, zero new cost or secrets.
+- **Action Kit:** `src/lib/actionKit.ts` — MLB Stats, TheMealDB, Open-Meteo registry with schemas
+  + fallback mocks. Confirmed via `curl -H "Origin: null"` that all three send
+  `Access-Control-Allow-Origin: *`, so fetches from the sandbox's opaque origin actually work.
+- **Prompt architecture:** `src/server/prompts/appGeneratorPrompt.ts` — real Dual-Engine system
+  prompt text (scaffolding for a future live model) plus deterministic `matchScenario` /
+  `generateAppSnippet` template synthesis for `acme-order` / `today-itinerary` / `default-sandbox`.
+- **Stream:** `agentStream.ts`'s `GET /api/agent/stream` now takes an optional `?prompt=`; when
+  present, Lead Dev streams the matched snippet as chunked `generated_app_payload` events (`done:
+  false` then one final `done: true`). No param -> zero change to the existing pipeline shape.
+- **Sandbox wiring:** `sandboxStore.ts` gained `connectGenerator(prompt)` — appends chunks live to
+  `state.code` (Source Code tab "typing" effect), calls `setCode` on the final chunk to render.
+  `AppPreview.tsx` now boots with `connectGenerator('ACME Order')` instead of a static demo string.
+- **tsconfig:** added `src/lib/actionKit.ts` as an explicit file entry in `tsconfig.node.json`'s
+  include (not the whole `src/lib` dir, which would've pulled DOM-typed files into the server
+  project) — first genuinely shared client/server module in this repo.
+- **Verification:** `tsc -b`/`build` clean; `test:sse` extended with a prompt-path test (194
+  chunked frames, correct final scenario) alongside the unchanged original assertions; real prod
+  boot confirmed the strict CSP is untouched on this route; Playwright **interacted** with the
+  live generated ACME app (added items, triggered the $100–$500 HITL tier, approved, confirmed the
+  notification drawer) and separately confirmed all three live API fetches in the Itinerary
+  scenario resolve with real data.
+- **Risk/Debt:** `AppPreview` now opens a third independent `/api/agent/stream` connection
+  alongside `SwarmCanvas`'s (extends UOW-04's already-noted debt); the itinerary snippet's fetch
+  fallbacks are hand-kept in sync with `actionKit.ts` rather than sharing it (plain string
+  template, can't import); `matchScenario` is coarse keyword matching, not real intent parsing.
+- **Next Milestone:** whatever the user scopes next.
+
+### UOW-08 Sync — AgentZ Governance Engine & Cryptographic Audit Ledger — 2026-07-22
+- **Spec:** `.codex/AGENTZ-STUDIO-SDK.md` gained sections 6 (Governance Policy Engine) and 7
+  (Audit Ledger), written to match what was actually built, including the mid-build fix below.
+- **Policy engine:** `src/server/services/policyEngine.ts` — `SYSTEM_CEILING` (20 calls/min, $500
+  absolute order ceiling, forbidden-ops list) plus a **separate, lower** $250 auto-approve ceiling.
+  Splitting those two was a fix, not the original design: clamping a requested auto-approve
+  threshold to the *same* value as the deny boundary produced a degenerate "HITL required between
+  $500 and $500" — caught by actually reading a generated app's own copy, not code review alone.
+- **Audit ledger:** `src/server/services/auditLedger.ts` — non-blocking ring-buffer queue drained
+  by a background worker into a SHA-256 Merkle chain (`Hash_N = SHA256(Hash_N-1 + Timestamp +
+  Payload)`), persisted to `.codex/audits/*.jsonl`, pruned by a 72-hour retention sweep, streamed
+  live via `GET /api/audit/stream`. Wired into every `agentStream.ts` connection/step/policy-check.
+- **Real bug found via browser verification, not just server-side testing:** an independent
+  Node script recomputing every hash directly against the live server found the chain
+  cryptographically perfect — yet loading the actual page reliably showed `Chain Broken`. Root
+  cause: `auditStreamHandler` read its backlog snapshot, then subscribed to live blocks — any
+  block produced in that gap (real, given 3 concurrent stream producers on page load) was
+  silently dropped for that connection, and the client's own hash-linkage check correctly flagged
+  the resulting discontinuity. Fixed by subscribing before reading the backlog and replaying
+  everything through one dedupe+strict-sequential buffer. Verified via a two-tab concurrent-
+  subscriber soak post-fix (36/36 blocks, `Verified Valid`, zero console errors in both tabs).
+- **UI:** `src/components/AuditLedgerPanel.tsx` + `src/lib/auditStore.ts` — third panel alongside
+  `Terminal`/`AppPreview` (`App.tsx` now a 3-column grid). Verification is client-side via Web
+  Crypto (`crypto.subtle`), not a trusted server-reported flag.
+- **Verification:** `tsc -b`/`build`/`test:sse` all clean; independent Node-based full-chain
+  hash recomputation; rate-limit (429 + audit-logged), forbidden-operation, and clamping paths
+  each exercised directly; retention worker proven with a manually-backdated file; real prod boot
+  confirms the audit route still carries the full strict CSP (never needed sandbox-frame's
+  exemption).
+- **Risk/Debt:** in-memory chain/backlog are capped (2,000 / 100) — old on-disk history isn't
+  re-served over the live stream; rate limiting is a single global window, not per-tenant; no
+  committed regression test for the concurrency race specifically (manual soak only).
+- **Next Milestone:** whatever the user scopes next.
+
+---
+
+# Architect Journal Entry: NemZilla Studio & Agent Swarm Pipeline
+
+**Date:** July 21–22, 2026
+
+**Module / Area:** NemZilla Studio Domain Setup, CLI Swarm Visualization, & Multi-Agent Architecture
+
+---
+
+## 1. Executive Summary & Core Objective
+
+The primary goal of this iteration was twofold:
+
+1. Establish a live, production-grade deployment for **NemZilla Studio** on Railway with custom domain routing via IONOS.
+2. Showcase an interactive **Multi-Agent Development Pipeline (Swarm CLI)** demonstrating how a orchestrated agent workflow (Planner $\rightarrow$ Architect $\rightarrow$ Lead Dev $\rightarrow$ Reviewer) accelerates software delivery by up to **5x** through streamed execution.
+
+---
+
+## 2. Infrastructure & Custom Domain Configuration
+
+* **Hosting Platform:** Railway (Service: `nemzilla-studio`)
+* **Domain Registrar & DNS:** IONOS (`nemzilla.net` / `www.nemzilla.net`)
+* **Target Port:** `8080`
+* **Routing Strategy:**
+* **Apex Domain (`nemzilla.net`):** Handled via IONOS native domain forwarding $\rightarrow$ redirected directly to `[https://www.nemzilla.net](https://www.nemzilla.net)`. (Eliminated root-level CNAME/TXT conflicts on Railway).
+* **Subdomain (`www.nemzilla.net`):** Bound to Railway service target `7dynp1ew.up.railway.app` via CNAME.
+* **Verification:** Added `_railway-verify.www` TXT record in IONOS (`railway-verify=1fcde467e31a8a74901060297...`) to validate domain ownership and issue SSL certificates.
+
+
+
+---
+
+## 3. Agent Swarm Architecture & CLI Demonstration
+
+* **Execution Flow:**
+
+$$\text{Planner} \longrightarrow \text{Architect} \longrightarrow \text{Lead Dev} \longrightarrow \text{Reviewer}$$
+
+
+* **Streaming Protocol:** Real-time Server-Sent Events (SSE) streaming latency, memory footprint, and step completion to both the CLI simulator and the web UI node graph.
+* **Performance Observation:**
+* Total pipeline run executed in **`2078ms`** across all four agent nodes (averaging ~280ms–400ms per agent step).
+* *UI Takeaway:* Because execution speed was ultra-fast, node transition states (`EXECUTING`) flashed past too quickly for visual UI indicators to hold state.
+
+
+
+---
+
+## 4. Key Lessons & Architectural Improvements
+
+1. **Pacing & Visualization Control:**
+* Rapid SSE streams require either network throttling, artificial delay hooks (`delay(1500ms)` per step), or a UI step-gating toggle to make the visualization interactive and clear for observers/demos.
+
+
+2. **Foundations for "Agent Trust Control Plane":**
+* *Concept:* Extend the agent workflow engine beyond execution into **policy enforcement** and **human-in-the-loop (HITL)** gates.
+* *Core Pattern:* Introduce rule-based interceptors on agent transactions (e.g., policy checks based on cost thresholds, action risk levels, or manual approval flags blocking execution until approved via email/dashboard).
+
+
+
+---
+
+## 5. Next Steps
+
+* [ ] Commit `architect-journal.md` updates.
+* [ ] Spin up a fresh chat session to brainstorm the conceptual architecture for the **Agent Trust Control Plane** (policy engines, MITM approval hooks, workflow definitions).
+
+---
+
+Copy and paste that straight into your journal! Whenever you're ready, open up a new chat, drop in your starting prompt, and let's level up this workflow engine concept! 🚀
+
+---

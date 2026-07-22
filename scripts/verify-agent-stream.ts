@@ -8,6 +8,7 @@ const HEALTH_URL = `${BASE_URL}/api/health`
 const STREAM_URL = `${BASE_URL}/api/agent/stream`
 
 const ALLOWED_EVENTS = new Set(['agent_step', 'token_stream', 'metric_tick', 'system_alert'])
+const ALLOWED_EVENTS_WITH_PROMPT = new Set([...ALLOWED_EVENTS, 'generated_app_payload'])
 const EXPECTED_AGENTS = ['Planner', 'Architect', 'Lead Dev', 'Reviewer']
 
 interface SseFrame {
@@ -103,6 +104,41 @@ async function testFullPipeline() {
   console.log(`   ok: ${frames.length} frames in ${elapsedMs}ms, pipeline order verified`)
 }
 
+async function testAppGenerationPrompt() {
+  console.log('-> requesting a generated_app_payload via ?prompt=ACME Order...')
+  const res = await fetch(`${STREAM_URL}?${new URLSearchParams({ prompt: 'ACME Order' })}`)
+  assert(res.ok, `expected 200 from prompted stream, got ${res.status}`)
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let raw = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    raw += decoder.decode(value, { stream: true })
+  }
+  const frames = parseFrames(raw)
+
+  for (const frame of frames) {
+    assert(
+      ALLOWED_EVENTS_WITH_PROMPT.has(frame.event),
+      `unexpected event type "${frame.event}" on prompted stream`,
+    )
+  }
+
+  const payloadFrames = frames.filter((f) => f.event === 'generated_app_payload')
+  assert(payloadFrames.length > 1, 'expected multiple generated_app_payload chunks')
+
+  const final = payloadFrames.at(-1)!.data as { scenario: string; code: string; done: boolean }
+  assert(final.done === true, 'final generated_app_payload frame should have done: true')
+  assert(final.scenario === 'acme-order', `expected acme-order scenario, got "${final.scenario}"`)
+  assert(final.code.includes('ACME'), 'final payload code should mention ACME')
+
+  const intermediate = payloadFrames.filter((f) => (f.data as { done: boolean }).done === false)
+  assert(intermediate.length > 0, 'expected intermediate (done: false) chunks before the final one')
+
+  console.log(`   ok: ${payloadFrames.length} generated_app_payload frames, final chunk matched scenario "acme-order"`)
+}
+
 async function testAbortDoesNotLeak() {
   console.log('-> aborting stream mid-flight and checking the server stays healthy...')
   const controller = new AbortController()
@@ -180,6 +216,7 @@ async function main() {
   try {
     await waitForHealthy()
     await testFullPipeline()
+    await testAppGenerationPrompt()
     await testAbortDoesNotLeak()
     console.log('\nAll agent stream checks passed.')
   } catch (err) {

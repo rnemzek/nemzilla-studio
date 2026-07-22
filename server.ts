@@ -25,7 +25,9 @@ async function main() {
   const honoListener = getRequestListener(app.fetch)
 
   const server = http.createServer((req, res) => {
-    if (req.url?.startsWith('/api')) {
+    // /sandbox-frame is Hono-served too (see src/server/routes/sandboxFrame.ts) —
+    // otherwise Vite's SPA middleware would serve index.html for it instead.
+    if (req.url?.startsWith('/api') || req.url?.startsWith('/sandbox-frame')) {
       honoListener(req, res)
       return
     }

@@ -31,6 +31,13 @@ export interface SandboxStore {
    * push the complete app into the preview iframe. Returns a disconnector.
    */
   connectGenerator: (prompt: string) => () => void
+  /**
+   * UOW-11 Task 11.6: the "Andiamo!" launch — opens
+   * `/api/agent/stream?swarmSessionId=...` instead of `?prompt=...`, driving
+   * the same store off the exact same `generated_app_payload` event shape
+   * the swarm pipeline's Lead Dev stage emits. Returns a disconnector.
+   */
+  connectSwarmGenerator: (swarmSessionId: string) => () => void
 }
 
 function parseFrame(chunk: string): { event: string; data: Record<string, unknown> } {
@@ -97,14 +104,14 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
     setState('status', 'building')
   }
 
-  function connectGenerator(prompt: string): () => void {
+  /** Shared by connectGenerator/connectSwarmGenerator — only the query string differs. */
+  function connectToStream(url: string): () => void {
     const controller = new AbortController()
     let releaseRole: (() => void) | null = null
     setState({ code: '', status: 'building', errorMessage: null })
 
     ;(async () => {
       try {
-        const url = `${window.location.origin}/api/agent/stream?prompt=${encodeURIComponent(prompt)}`
         const res = await fetch(url, { signal: controller.signal })
         if (!res.body) throw new Error('agent stream: empty response body')
 
@@ -150,9 +157,36 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
     return () => controller.abort()
   }
 
+  function connectGenerator(prompt: string): () => void {
+    return connectToStream(`${window.location.origin}/api/agent/stream?prompt=${encodeURIComponent(prompt)}`)
+  }
+
+  function connectSwarmGenerator(swarmSessionId: string): () => void {
+    return connectToStream(`${window.location.origin}/api/agent/stream?swarmSessionId=${encodeURIComponent(swarmSessionId)}`)
+  }
+
+  /**
+   * Best-effort relay of a generated order-entry app's own postMessage
+   * (see swarmCodeSynthesizer.ts) into the real audit ledger. Runs on this
+   * (real-origin) page, not inside the sandboxed iframe, so it's a same-
+   * origin fetch with no CORS concerns — unlike the sandboxed app itself,
+   * which has an opaque origin and couldn't call `/api/*` directly. Failures
+   * are logged but never surface to the app; the HITL modal already gave the
+   * user real-time feedback regardless of whether the audit POST lands.
+   */
+  function relayOrderEvent(data: { sessionId?: unknown; total?: unknown; decision?: unknown }) {
+    void fetch(`${window.location.origin}/api/orders/event`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: data.sessionId, total: data.total, decision: data.decision }),
+    }).then((res) => {
+      if (!res.ok) console.error('sandboxStore: order event relay failed', res.status)
+    }, (err) => console.error('sandboxStore: order event relay failed', err))
+  }
+
   function onMessage(event: MessageEvent) {
     if (!frame || event.source !== frame.contentWindow) return
-    const data = event.data as { type?: string; message?: string } | undefined
+    const data = event.data as { type?: string; message?: string; sessionId?: unknown; total?: unknown; decision?: unknown } | undefined
     switch (data?.type) {
       case SANDBOX_MESSAGE.ready:
         frameReady = true
@@ -163,6 +197,9 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
         break
       case SANDBOX_MESSAGE.error:
         setState({ status: 'error', errorMessage: data.message ?? 'Unknown runtime error' })
+        break
+      case SANDBOX_MESSAGE.order:
+        relayOrderEvent(data)
         break
     }
   }
@@ -178,7 +215,7 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
     }
   }
 
-  return { state, setTab, setCode, attachFrame, connectGenerator }
+  return { state, setTab, setCode, attachFrame, connectGenerator, connectSwarmGenerator }
 }
 
 /**

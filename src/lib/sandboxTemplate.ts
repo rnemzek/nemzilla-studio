@@ -6,6 +6,8 @@ export const SANDBOX_MESSAGE = {
   code: 'nemzilla:sandbox-code',
   rendered: 'nemzilla:sandbox-rendered',
   error: 'nemzilla:sandbox-error',
+  /** UOW-11 Task 11.6: a generated order-entry app reports each order decision (auto/HITL approve/deny) here — see sandboxStore.ts and swarmCodeSynthesizer.ts. */
+  order: 'nemzilla:sandbox-order-decision',
 } as const
 
 /**

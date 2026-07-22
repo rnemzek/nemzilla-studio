@@ -1,13 +1,16 @@
 import { apiClient } from './apiClient.ts'
+import { createPoInterview, submitPoAnswer, SYSTEM_ORDER_CEILING, type PoInterviewState } from './poInterview.ts'
+import { getSessionBundle, putSessionArtifact, type SessionBundle } from './sessionBundleClient.ts'
+import { sandboxStore } from './sandboxStore.ts'
 
-export type OutputKind = 'input' | 'output' | 'error' | 'system'
+export type OutputKind = 'input' | 'output' | 'error' | 'system' | 'po'
 
 export interface CommandContext {
   print: (text: string, kind?: OutputKind) => void
   clear: () => void
 }
 
-export const COMMANDS = ['help', 'run', 'triad', 'metrics', 'clear', 'launch'] as const
+export const COMMANDS = ['help', 'run', 'triad', 'metrics', 'clear', 'launch', 'build', 'andiamo'] as const
 
 const LAUNCH_TARGETS: Record<string, string> = {
   robert: 'https://robert.nemzilla.net',
@@ -22,6 +25,8 @@ const HELP_TEXT = [
   '  triad             Condensed status pass over the agent pipeline (no reasoning text).',
   '  metrics           Query /api/health for live status, uptime, and round-trip latency.',
   '  launch [target]   Open an ecosystem link (robert, streaming, grid) or list targets.',
+  '  build             Start the AI PO discovery interview (vendor name, catalog, HITL threshold).',
+  '  andiamo           Launch the swarm build from the completed interview into App Preview.',
   '  clear             Clear the terminal output.',
 ]
 
@@ -117,6 +122,97 @@ async function runMetrics(ctx: CommandContext) {
   ctx.print(`timestamp: ${body.timestamp}`, 'output')
 }
 
+// Module-level (per browser tab, not server-wide) — mirrors the interview's
+// lifecycle across multiple runCommand() calls the same way sessionManager.ts
+// tracks the server-wide builder lock across multiple connections.
+let activeInterview: PoInterviewState | null = null
+
+/** The RN avatar (rendered by Terminal.tsx for 'po'-kind lines) replaces the old literal "[AI PO] " text prefix. */
+function printPo(ctx: CommandContext, message: string) {
+  ctx.print(message, 'po')
+}
+
+function printPoLines(ctx: CommandContext, state: PoInterviewState, fromIndex: number) {
+  for (let i = fromIndex; i < state.transcript.length; i++) {
+    const entry = state.transcript[i]!
+    if (entry.role === 'po') printPo(ctx, entry.message)
+  }
+}
+
+function startInterview(ctx: CommandContext) {
+  activeInterview = createPoInterview()
+  printPoLines(ctx, activeInterview, 0)
+}
+
+/** Best-effort persistence — Task 11.1's session bundle recorder; failures are logged client-side but never block the conversation. */
+async function persistInterviewArtifacts(state: PoInterviewState): Promise<void> {
+  await putSessionArtifact(state.sessionId, 'poTranscript', state.transcript)
+  if (state.vendorName && state.catalog) {
+    await putSessionArtifact(state.sessionId, 'catalog', { vendorName: state.vendorName, items: state.catalog })
+  }
+  if (state.hitlThreshold !== null) {
+    await putSessionArtifact(state.sessionId, 'policyRules', {
+      hitlThreshold: state.hitlThreshold,
+      autoApproveThreshold: state.hitlThreshold,
+      autoDenyThreshold: SYSTEM_ORDER_CEILING,
+    })
+  }
+}
+
+async function continueInterview(ctx: CommandContext, rawInput: string): Promise<void> {
+  const state = activeInterview!
+
+  if (rawInput.toLowerCase() === 'cancel') {
+    printPo(ctx, 'Interview cancelled.')
+    activeInterview = null
+    return
+  }
+
+  const beforeLength = state.transcript.length
+  const { done } = submitPoAnswer(state, rawInput)
+  // submitPoAnswer already appended the user's line to the transcript before
+  // the PO's reply — only print the PO's own new line(s), the user's answer
+  // was already echoed by Terminal.tsx's `$ ${value}` print before dispatch.
+  printPoLines(ctx, state, beforeLength + 1)
+
+  if (done) {
+    await persistInterviewArtifacts(state)
+    printPo(ctx, `Discovery interview recorded (session ${state.sessionId}).`)
+  }
+}
+
+function summarizeBundle(ctx: CommandContext, sessionId: string, bundle: SessionBundle) {
+  const catalog = bundle.catalog as { vendorName: string; items: { name: string; price: number }[] } | null
+  const policyRules = bundle.policyRules as { hitlThreshold: number } | null
+  ctx.print(`vendor:        ${catalog?.vendorName ?? 'unknown'}`, 'output')
+  ctx.print(`catalog items: ${catalog?.items.length ?? 0}`, 'output')
+  ctx.print(`HITL ceiling:  $${policyRules?.hitlThreshold ?? '?'}`, 'output')
+  ctx.print(`session:       ${sessionId}`, 'output')
+}
+
+async function runAndiamo(ctx: CommandContext): Promise<void> {
+  if (!activeInterview || activeInterview.stage !== 'complete') {
+    ctx.print('No completed discovery interview yet — type "build" to start one.', 'error')
+    return
+  }
+
+  printPo(ctx, 'Andiamo! Verifying the hand-off package...')
+  const bundle = await getSessionBundle(activeInterview.sessionId)
+  if (!bundle) {
+    ctx.print('hand-off error: could not read back the session bundle', 'error')
+    return
+  }
+
+  summarizeBundle(ctx, activeInterview.sessionId, bundle)
+  ctx.print('Launching the swarm build into App Preview — watch the Swarm Canvas for live telemetry.', 'system')
+  // Fire-and-forget, mirroring CookbookDropdown.tsx's connectGenerator() call —
+  // AppPreview renders whatever this connection streams back, and the
+  // Swarm Canvas (a pure spectator) picks up the same broadcast telemetry
+  // independently. If a build is already active server-wide, this becomes a
+  // spectator of it instead of a competing build (see sessionManager.ts).
+  sandboxStore.connectSwarmGenerator(activeInterview.sessionId)
+}
+
 function runLaunch(ctx: CommandContext, target?: string) {
   if (!target) {
     ctx.print(`Ecosystem targets: ${Object.keys(LAUNCH_TARGETS).join(', ')}`, 'output')
@@ -137,6 +233,14 @@ function runLaunch(ctx: CommandContext, target?: string) {
 export async function runCommand(rawInput: string, ctx: CommandContext): Promise<void> {
   const trimmed = rawInput.trim()
   if (!trimmed) return
+
+  // While an interview is in progress, every line is an answer to the AI PO
+  // (or "cancel") rather than a shell command — a chat interface, not a
+  // command dispatcher, until the interview reaches its 'complete' stage.
+  if (activeInterview && activeInterview.stage !== 'complete') {
+    await continueInterview(ctx, trimmed)
+    return
+  }
 
   const [name, ...args] = trimmed.split(/\s+/)
   const command = name!.toLowerCase()
@@ -159,6 +263,12 @@ export async function runCommand(rawInput: string, ctx: CommandContext): Promise
       break
     case 'launch':
       runLaunch(ctx, args[0])
+      break
+    case 'build':
+      startInterview(ctx)
+      break
+    case 'andiamo':
+      await runAndiamo(ctx)
       break
     default:
       ctx.print(`command not found: ${command} (type "help" for a list)`, 'error')

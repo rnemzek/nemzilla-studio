@@ -1,6 +1,7 @@
-import { For, createEffect, createSignal, onMount } from 'solid-js'
+import { For, Show, createEffect, createSignal, onMount } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import { runCommand, type OutputKind } from '../lib/terminalCommands.ts'
+import RnAvatar from './RnAvatar.tsx'
 
 interface TerminalLine {
   id: number
@@ -22,6 +23,7 @@ function kindClass(kind: OutputKind) {
     case 'error':
       return 'text-red-400'
     case 'system':
+    case 'po':
       return 'text-accent'
     default:
       return 'text-text-muted'
@@ -126,7 +128,19 @@ export default function Terminal() {
 
       <div ref={scrollRef} class="max-h-80 overflow-y-auto px-4 py-3">
         <For each={lines}>
-          {(line) => <p class={`whitespace-pre-wrap ${kindClass(line.kind)}`}>{line.text}</p>}
+          {(line) => (
+            <Show
+              when={line.kind === 'po'}
+              fallback={<p class={`whitespace-pre-wrap ${kindClass(line.kind)}`}>{line.text}</p>}
+            >
+              <p class={`flex items-start gap-2 whitespace-pre-wrap ${kindClass(line.kind)}`}>
+                <RnAvatar size={16} class="mt-0.5 shrink-0" />
+                <span>
+                  <span class="font-semibold">AI PO:</span> {line.text}
+                </span>
+              </p>
+            </Show>
+          )}
         </For>
       </div>
 

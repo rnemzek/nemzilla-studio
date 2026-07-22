@@ -1,7 +1,7 @@
 import type { Context } from 'hono'
 import { serveSessionStream } from '../services/agentStream.ts'
 import { checkRateLimit } from '../services/policyEngine.ts'
-import { enqueueAuditEvent } from '../services/auditLedger.ts'
+import { emitPipelineEvent } from '../services/eventBus.ts'
 
 /**
  * Always-spectate endpoint — never attempts to claim the builder role, so a
@@ -12,12 +12,12 @@ import { enqueueAuditEvent } from '../services/auditLedger.ts'
 export function spectatorStreamHandler(c: Context) {
   const rateLimit = checkRateLimit()
   if (!rateLimit.allowed) {
-    enqueueAuditEvent('rate_limit_denied', { prompt: null, reason: rateLimit.reason }, 'denied')
+    emitPipelineEvent({ name: 'rate_limit_denied', audit: { payload: { prompt: null, reason: rateLimit.reason }, policyStatus: 'denied' } })
     return c.json({ error: rateLimit.reason }, 429)
   }
 
   const sessionId = crypto.randomUUID()
-  enqueueAuditEvent('spectator_connected', {}, 'allowed', sessionId)
+  emitPipelineEvent({ name: 'spectator_connected', sessionId, audit: { payload: {} } })
 
   return serveSessionStream(c, 'spectator', sessionId)
 }

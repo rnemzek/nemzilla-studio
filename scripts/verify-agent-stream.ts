@@ -15,7 +15,11 @@ const ALLOWED_EVENTS = new Set([
   'metric_tick',
   'system_alert',
 ])
-const ALLOWED_EVENTS_WITH_PROMPT = new Set([...ALLOWED_EVENTS, 'generated_app_payload'])
+// 'notification' is emitted by the UOW-11 Notifier daemon (notifierDaemon.ts)
+// whenever a prompted build's pipeline_completed event carries a `notify` tag
+// (see agentStream.ts's runPipeline) — only reachable when a prompt actually
+// drives a generation, so it's scoped to the prompted allowlist, not the base one.
+const ALLOWED_EVENTS_WITH_PROMPT = new Set([...ALLOWED_EVENTS, 'generated_app_payload', 'notification'])
 const EXPECTED_AGENTS = ['Planner', 'Architect', 'Lead Dev', 'Reviewer']
 
 interface SseFrame {

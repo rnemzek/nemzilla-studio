@@ -310,6 +310,299 @@
   flow end to end, zero console errors.
 - **Next Milestone:** whatever the user scopes next.
 
+### UOW-11 Sync — Conversational Swarm Engine & Pluggable Micro-Agents — 2026-07-22
+- **Vision:** `.codex/specs/UOW-11-CONVERSATIONAL-SWARM-VISION.md` retargets the platform from a
+  static scenario-launcher (prompt keyword-matched to a fixed template) to a conversational AI PO
+  interview driving a pluggable domain-micro-agent swarm, with Audit/Notifier/Artifact-Recorder
+  as passive event-bus daemons rather than pipeline-coupled calls. Draft breakdown appended to
+  `context.md` as Phase 1 (artifact bundle + event bus), Phase 2 (PO interviewer + telemetry),
+  Phase 3 (domain micro-agents + "Andiamo!" hand-off).
+- **Task 11.1 — Session Bundle Recorder:** `src/server/services/sessionBundleRecorder.ts` writes/
+  reads the 5-artifact bundle (`po-transcript.json`, `project-plan.md`, `catalog.json`,
+  `policy-rules.json`, `app-payload.json`) under `.codex/sessions/[session-id]/`, one artifact at
+  a time so a partial interview persists before a payload exists. `GET`/`PUT
+  /api/sessions/:id/bundle` (`src/server/routes/sessionBundle.ts`) reuses the UUID-only
+  `sessionId` guard from `sessionSerializer.ts`/`recipeSerializer.ts`. Verified live: full write→
+  read round trip for all 5 artifacts, invalid shape / bad artifact key / path-traversal
+  `sessionId` all correctly rejected (400).
+- **Task 11.2 — Event Bus Refactor (architect-directed sequencing: bus before wiring the
+  recorder into the live pipeline):** `src/server/services/eventBus.ts` — a minimal tagged
+  pub/sub (`broadcast`/`audit`/`notify`/`data` tags, each owned by exactly one daemon). Four
+  self-registering daemons (`broadcastRelay.ts`, `auditDaemon.ts`, `notifierDaemon.ts`,
+  `artifactRecorderDaemon.ts`), imported once for side effects via `daemons.ts` -> `app.ts`.
+  `agentStream.ts`'s `runPipeline()` and `agentStreamHandler()`, plus `spectatorStream.ts`, now
+  emit one tagged `PipelineEvent` per occurrence instead of calling `broadcastFrame` /
+  `enqueueAuditEvent` / `recordCompletedBuild` directly — those three call sites are now fully
+  decoupled from the pipeline that produces the events. `artifactRecorderDaemon.ts` is the first
+  real listener wired onto the new UOW-11 session bundle: it reacts to `pipeline_completed` and
+  writes `app-payload.json` via `sessionBundleRecorder.ts` (Task 11.1's service), alongside the
+  still-required legacy `recordCompletedBuild()` call the Cookbook dropdown reads from.
+  `notifierDaemon.ts` is genuinely new behavior, not just a refactor — it turns `notify`-tagged
+  events (generation refused, policy clamped, build complete) into a `notification` SSE frame;
+  no client UI consumes it yet (that's Phase 2/3), but the daemon side of the wire is live.
+- **Design decision:** the emit call sites (not the daemons) decide which tag(s) apply to a given
+  occurrence — e.g. `token_stream` only carries `broadcast`, `agent_step` carries both `broadcast`
+  and `audit`, `pipeline_completed` carries `data` and `notify` but no `broadcast`. This keeps
+  every daemon a dumb, fully generic forwarder (`if (event.audit) enqueueAuditEvent(...)`) with
+  zero per-event-name branching, so a future daemon is "check for a tag" rather than "know the
+  full event vocabulary" — the reason a fifth daemon (or Phase 2's PO transcript listener) won't
+  require touching `auditDaemon.ts`/`broadcastRelay.ts` at all.
+- **Verification:** `npx tsc -b` clean, `npm run build` clean. `npm run test:sse` required one
+  intentional update, not a regression fix: the prompted-stream test's SSE event allowlist didn't
+  know about the new `notification` event type yet (real new behavior from `notifierDaemon.ts`,
+  scoped to the prompted-stream allowlist since it's only reachable via a completed generation).
+  All four suites green after that update (51-frame full pipeline, 206-frame prompted generation,
+  spectator-mode mirroring, abort-leak checks). Live end-to-end run against the real dev server
+  confirmed byte-for-byte unchanged audit ledger shape (11 blocks: 1 `stream_connected` + 8
+  `agent_step` + 1 `policy_check` + 1 `generated_app_payload`, hash chain intact), the legacy
+  `.codex/demos/[id].json` still populated, and the new `.codex/sessions/[id]/app-payload.json`
+  now auto-populated by the Artifact Recorder daemon with zero pipeline code aware of its
+  existence.
+- **Risk/Debt:** `artifactRecorderDaemon.ts` only handles `pipeline_completed` today — Tasks
+  11.3-11.5 will need to add `po_transcript_updated` / `catalog_extracted` /
+  `policy_rules_compiled` listeners once the conversational interview actually produces that data;
+  the daemon's existing settle-delay pattern (150ms, matching `auditLedger`'s non-blocking drain)
+  should carry over unchanged. `notifierDaemon.ts`'s `notification` frame has no client
+  consumer yet — Phase 2/3 UI work will need a `notificationStore.ts` + toast component to
+  actually surface it.
+### UOW-11 Task 11.3 Sync — Conversational AI PO Discovery Interviewer — 2026-07-22
+- **Design:** `src/lib/poInterview.ts` — a deterministic finite-state machine (`vendor_name ->
+  catalog -> policy_threshold -> complete`), matching this project's established pattern
+  (`appGeneratorPrompt.ts`'s `matchScenario`/`generateAppSnippet`) of simulating "AI" behavior
+  with real, inspectable logic rather than wiring a live model call. Invalid input at any stage
+  re-asks the same question rather than crashing or silently advancing with bad data.
+- **CLI integration:** rather than rewriting `terminalCommands.ts`'s existing command dispatcher
+  (Zero Rewrites protocol), added a `build` command that starts the interview and a module-level
+  `activeInterview` flag that reroutes every subsequent input line to the PO as a chat answer
+  instead of a shell command — mirrors `sessionManager.ts`'s existing precedent of module-level
+  mutable state for a single active flow, just client-side and per-tab instead of server-wide.
+  `help`/`run`/`triad`/`metrics`/`launch`/`clear` are all untouched and still dispatch normally
+  once the interview reaches `complete`.
+- **Hand-off proof, not just extraction:** added an `andiamo` command that fetches the just-
+  persisted session bundle back from the server (`GET /api/sessions/:id/bundle`, Task 11.1) and
+  prints a vendor/catalog/HITL-threshold summary — a real, verifiable round trip rather than a
+  command that merely echoes client-side state, so Task 11.4's swarm hand-off has something
+  concrete to build on. Deliberately does **not** clamp the requested HITL threshold to the
+  $500/$250 system ceiling here — that's Task 11.6's "enforcing user-defined policy bounds on
+  checkout" per the roadmap, kept out of this task's scope.
+- **`src/lib/sessionBundleClient.ts`:** thin `fetch()` wrapper around Task 11.1's bundle
+  endpoints, matching the project's existing convention of plain `fetch()` (not `hc<AppType>`)
+  for the whole `/api/sessions/*` family (see `recipeStore.ts`, `CookbookDropdown.tsx`) rather
+  than fighting Hono RPC's dynamic-segment typing.
+- **Real environment issue found and worked around, not caused by this task:** the shared
+  `run-nemzilla-studio` skill's Playwright driver (`waitUntil: 'networkidle'`) timed out on page
+  load — reproduced identically against the *unmodified* default scenario, ruling out a Task
+  11.3 regression immediately. Root cause, found via `framenavigated` logging: Vite's dev-mode
+  HMR client was full-page-reloading the main frame in a tight loop in this container (dozens of
+  reloads/second), wiping all Solid component state before any typed input could register —
+  unrelated to the app's own code (no `location.reload()` anywhere in `src/`). Verified instead
+  against a `NODE_ENV=production` boot (no Vite middleware at all, so no HMR client): the full
+  conversational flow ran clean end to end via a throwaway Playwright script (scratchpad-only,
+  matching the UOW-03 precedent, deleted after use) — zero console errors, and the persisted
+  `po-transcript.json` (8 correctly-ordered/timestamped entries), `catalog.json` (3 items, exact
+  prices), and `policy-rules.json` ($100 HITL/auto-approve, $500 auto-deny) all verified
+  byte-correct on disk afterward.
+- **Verification:** `npx tsc -b`/`npm run build` clean; `npm run test:sse` clean (no server-side
+  change this task, re-run only as a regression guard); production-mode Playwright run as above.
+- **Risk/Debt:** the dev-mode HMR reload-storm issue is real and will block *any* future
+  browser-driven verification against `npm run dev` in this container until root-caused further —
+  flagging it here rather than silently routing every future check through production mode.
+  `poInterview.ts`'s catalog/threshold parsing is deliberately permissive single-line grammar
+  (`Name|$Price, ...` / a bare dollar amount), not natural-language extraction — consistent with
+  every other "AI" step in this codebase being simulated-but-real rather than a live model call.
+- **Next Milestone:** Task 11.4 — broadcast live Swarm Telemetry packets ([PO] -> [Architect] ->
+  [Domain Micro-Agents] -> [Policy] -> [Lead Dev]) over `/api/agent/stream`.
+
+### UOW-11 Task 11.4 Sync — Live Swarm Telemetry over `/api/agent/stream` — 2026-07-22
+- **Architectural decision (additive, not a replacement):** the classic `runPipeline()`
+  (Planner/Architect/Lead Dev/Reviewer) is load-bearing for a lot of already-shipped surface —
+  `SwarmCanvas.tsx`'s hardcoded 4-node force layout, `AppPreview.tsx`'s ACME Order boot demo, the
+  Cookbook presets, and `verify-agent-stream.ts`'s assertions. Rather than reshape it into the new
+  5-stage swarm lineup (which would cascade into all of those), added a second, parallel stage-
+  list runner — `runSwarmPipeline()` — selected by a new opt-in `?swarmSessionId=` query param on
+  the *same* `/api/agent/stream` endpoint (mutually exclusive with `?prompt=`). Zero risk to
+  anything already built; confirmed via an unmodified `npm run test:sse` re-run.
+- **Stage list:** `[PO] -> [Architect] -> [Domain Micro-Agents] -> [Policy] -> [Lead Dev]`, per
+  the vision doc's Phase B diagram. `[Domain Micro-Agents]` is deliberately a single placeholder
+  stage — Task 11.5 owns the real pluggable dispatch (AI Vendor/AI OE/AI TODO/AI Sport/AI SS/
+  AI Food) based on interview context, and doing that here would be scope creep. `[Lead Dev]` is
+  reasoning-only telemetry, no `generated_app_payload` — real code synthesis needs 11.5's domain-
+  agent output plus 11.6's Andiamo launch wiring, neither of which exists yet.
+- **`[Policy]` is real, not simulated:** calls the existing `resolveOrderThreshold()` from
+  `policyEngine.ts` against the interview's actual requested HITL threshold — same governance
+  ceiling ($250 auto-approve / $500 auto-deny) the classic ACME scenario already enforces, just
+  evaluated against conversational-interview data instead of a scenario template's default.
+- **Data-connected telemetry, not generic copy:** `runSwarmPipeline()` reads the completed PO
+  interview back via Task 11.1's `readSessionBundle(swarmSessionId)`, so every stage's reasoning
+  text references the real vendor name, catalog size, and requested threshold — e.g. "Reviewing
+  the discovery interview for Radio Shack — 3 catalog item(s), a $100 HITL threshold requested."
+  A missing/incomplete bundle produces a clean error `system_alert` + audit-logged `denied`, not a
+  crash; a malformed `swarmSessionId` is rejected with 400 before a session is even claimed.
+- **Event bus payoff, not just reuse:** every occurrence in `runSwarmPipeline()` emits the exact
+  same tagged `PipelineEvent` shape (`broadcast`/`audit`/`notify`) Task 11.2's `runPipeline()`
+  already uses — so the broadcast relay, audit daemon, and notifier daemon all handle this brand
+  new pipeline shape with *zero* code changes of their own. This is the concrete payoff of Task
+  11.2's decoupling: adding a second producer required touching exactly one file (`agentStream.ts`),
+  not four.
+- **Scannable pacing (per the vision doc's own wording):** 650ms/stage + an explicit 350ms
+  "Handing off from X to Y..." beat between stages, versus the classic pipeline's 150ms — tuned
+  for a human actually watching the swarm during a conversational demo, not a fast simulated CI
+  run.
+- **Documented scope trim:** `SwarmCanvas.tsx`/`swarmStore.ts` still hardcode the classic 4-node
+  Planner/Architect/Lead Dev/Reviewer layout and silently drop any `agent_step`/`token_stream` for
+  an unrecognized agent name (`PIPELINE_ORDER.indexOf(agent) === -1` short-circuits). A swarm-mode
+  run's telemetry is fully broadcast/audited but not yet visually rendered — out of this task's
+  stated scope ("Update `/api/agent/stream`," a server-side broadcast concern, not canvas
+  rendering), and a real rewrite given the component's fixed node count/anchor positions/link
+  list. Flagged as risk/debt, not silently left undiscovered.
+- **Verification:** `npx tsc -b`/`npm run build` clean; `npm run test:sse` clean (unmodified —
+  regression guard for the classic pipeline). Live end-to-end runs against the real server:
+  correct 10-event `agent_step` sequence in exact stage order, 6 hand-off `system_alert` messages
+  referencing the real vendor name, a real (non-clamped) `policy_check` audit block at $100, a
+  second run at $400 correctly clamped with a `notification` warning frame, 400 on a malformed
+  `swarmSessionId`, and a graceful error alert (clean `session_ended`, no hang/crash) for a
+  valid-shaped but nonexistent session.
+- **Risk/Debt:** SwarmCanvas visualization gap noted above; `runSwarmPipeline()`'s `[Domain
+  Micro-Agents]` stage does no actual work yet (single canned reasoning line) — Task 11.5 needs
+  to replace it with real per-agent dispatch, likely turning this one stage into a variable-length
+  sub-sequence rather than a single node, which will need its own telemetry-shape decision.
+- **Next Milestone:** Task 11.5 — pluggable domain micro-agent handlers (AI Vendor, AI OE, AI TODO,
+  AI Sport, AI SS, AI Food) dispatched dynamically based on PO discovery context.
+
+### UOW-11 Task 11.5 Sync — Pluggable Domain Micro-Agent Dispatcher — 2026-07-22
+- **Registry pattern, not a switch statement:** `src/server/services/domainAgents.ts` defines each
+  of the 6 domain agents as an independent `{ agent, detect, run }` tuple in one array;
+  `dispatchDomainAgents()` is a two-line filter+map over that array. This is the actual
+  architectural property "pluggable" demands — a 7th agent (or a hundredth) is one new registry
+  entry, and the dispatcher, `runSwarmPipeline()`, and every downstream daemon need zero changes.
+- **Genuinely conditional, not theater:** `AI Vendor`/`AI OE` are unconditional (`detect: () =>
+  true`) since every PO interview is fundamentally an order-entry app per the vision doc's own
+  Scenario 1 framing — this matches the guidance's own example ("dispatching AI Vendor + AI OE for
+  Radio Shack / OrderKong"). The other 4 use real deterministic keyword matching against the
+  interview's vendor name and catalog item names (same style as `appGeneratorPrompt.ts`'s
+  `matchScenario()` — simulated "AI" via inspectable logic, not a live model call). Proved this
+  isn't hardcoded theater with two live runs: a plain retail catalog dispatched exactly 2 agents
+  (`AI Vendor, AI OE`); a catalog engineered to hit every keyword category dispatched all 6, in
+  registry order, with the correct hand-off narration through every stage.
+- **Structured schema fragments, not just reasoning text:** each dispatched agent's `run()`
+  returns `{ agent, summary, schema }` — `schema` is a real structured fragment (e.g. `AI Sport` ->
+  `{ type: 'sportsWidget', source: 'ESPN', teams: [] }`), not just a sentence. These are embedded
+  directly in each stage's `agent_step` audit payload, so the tamper-evident Merkle chain becomes
+  the actual record of what each agent contributed — verified live by reading the `AI Sport` audit
+  block back and confirming its `schema` field round-tripped exactly.
+- **Refactor, not duplication, in `runSwarmPipeline()`:** the repeated EXECUTING -> tokens ->
+  [stage-specific hook] -> metric_tick -> DONE beat (previously inline in Task 11.4's flat loop)
+  is now `runSwarmStage()`, a single shared helper used by the two fixed pre-stages (PO,
+  Architect), the variable-length domain-agent loop, and the two fixed post-stages (Policy, Lead
+  Dev) — an `onTokensDone` hook lets Policy's real `resolveOrderThreshold()` call and its
+  audit/notify emission slot into the exact same beat without a special-cased branch inside the
+  loop body (which is what Task 11.4's version had). `swarmHandoff()` factors out the "Handing off
+  from X to Y..." narration the same way.
+- **Feeds Policy and Lead Dev for real, within this task's honest scope:** `Policy`'s audit payload
+  and `Lead Dev`'s reasoning text both now include the full dispatched-agent list — literally
+  "using outputs from AI Vendor, AI OE, AI TODO, AI Sport, AI SS, AI Food" in the mixed-keyword
+  run. `Lead Dev` still doesn't synthesize real code from those schemas yet — that consumption
+  step is Task 11.6's job (Andiamo launch), kept explicitly out of scope here rather than faked.
+- **Verification:** `npx tsc -b`/`npm run build` clean; `npm run test:sse` clean (classic pipeline
+  untouched, re-run as a regression guard only). Live end-to-end swarm runs as described above,
+  covering both the "nothing extra dispatched" floor case and the "everything dispatched" ceiling
+  case, plus direct audit-ledger inspection of a domain agent's schema fragment.
+- **Risk/Debt:** keyword lists are hand-picked and English-only, consistent with every other
+  "simulated AI" matcher in this codebase (`matchScenario()`, `poInterview.ts`'s parsers) — not
+  natural-language intent classification. `AI Sport`/`AI SS`/`AI Food`/`AI TODO`'s schema
+  fragments are structurally real but contentually empty (`teams: []`, `titles: []`, `recipes: []`,
+  `tasks: []`) since the PO interview (Task 11.3) doesn't yet collect domain-specific details for
+  them — only vendor/catalog/threshold. Populating those fragments with real extracted data would
+  need the PO interview itself extended with domain-specific follow-up questions, which is outside
+  this task's and this UOW's current numbered scope.
+- **Next Milestone:** Task 11.6 — "Andiamo!" launch trigger: consume the dispatched agents'
+  schemas to synthesize real code, pass it to `<AppPreview/>`, and enforce policy bounds at
+  checkout.
+
+### UOW-11 Task 11.6 Sync — "Andiamo!" Launch, Code Synthesis & Live HITL Gate — 2026-07-22
+- **Code synthesis, not another template stub:** `src/server/services/swarmCodeSynthesizer.ts`'s
+  `synthesizeOrderEntryApp()` generates a real, executable app from the aggregated bundle — same
+  Dual-Engine shape as UOW-07's ACME template (catalog, cart, HITL modal, virtual notification
+  drawer), but parameterized entirely by the PO interview's actual vendor name, catalog, and
+  resolved policy ceiling. Since this is the first place *user-supplied* interview text gets
+  embedded into a generated app's HTML/JS (every prior scenario's catalog was hardcoded), added
+  real escaping: `escapeHtml()` for the vendor name in markup, `JSON.stringify` + `<`-neutralizing
+  for the catalog embedded in the inline `<script>` (guards against both breaking the JS string
+  literal and a `</script>`-style tag-injection attempt) — defense in depth on top of the existing
+  iframe sandbox isolation, not a replacement for it.
+- **A real cross-session-id bug caught and fixed before it shipped:** the Artifact Recorder
+  daemon's existing `pipeline_completed` handler always wrote `app-payload.json` under
+  `event.sessionId` — correct for the classic pipeline (one id, one purpose), but for a swarm run
+  that id is the *ephemeral builder-lock id* (fresh per stream connection), not the *PO
+  interview's own id* that `po-transcript.json`/`catalog.json`/`policy-rules.json` already live
+  under. Emitting `pipeline_completed` unchanged would have split one build's artifacts across
+  two disconnected `.codex/sessions/` folders. Fixed by adding an optional `bundleSessionId` field
+  to the event's data payload — `writeAppPayload` uses `bundleSessionId ?? sessionId` (classic
+  pipeline is unaffected, since it never sets the field), while `recordCompletedBuild`/
+  `getSessionAuditBlocks` still correctly use the raw builder-lock `sessionId`, since that's the id
+  every audit event from *this specific run* was actually tagged with. Verified directly: the
+  swarm bundle folder ends up with all 4 artifacts together, while the legacy `.codex/demos/`
+  record still correlates 16 audit blocks under its own distinct builder-lock id.
+- **"Andiamo!" reuses the existing launch mechanism, doesn't reinvent it:** `sandboxStore.ts`'s
+  `connectGenerator(prompt)` already opened `/api/agent/stream?prompt=...` and parsed
+  `generated_app_payload` events into the preview — since the swarm pipeline emits the *exact same*
+  event shape (a deliberate Task 11.4/11.6 design choice), the only new code needed was a thin
+  `connectSwarmGenerator(swarmSessionId)` wrapper opening `?swarmSessionId=...` instead, sharing
+  100% of the parsing logic via an extracted `connectToStream()` helper. `terminalCommands.ts`'s
+  `andiamo` command calls this the same way `CookbookDropdown.tsx` already triggers builds via the
+  shared singleton — inheriting the single-active-builder semantics for free (a build already
+  active elsewhere makes `andiamo` a spectator of it, not a competing build).
+- **Live policy enforcement, not a canned demo:** the synthesized app's checkout logic evaluates
+  the interview's *actual* resolved HITL threshold (post-clamp, from the Policy stage) against the
+  cart total — the same three-band logic (auto-approve / HITL / auto-deny) every other scenario
+  uses, just driven by conversational data instead of a fixed number.
+- **A real architectural boundary decision, not an oversight:** an order can be placed long after
+  the swarm pipeline session that generated the app has already ended (the builder lock released,
+  `sessionManager`'s backlog cleared). The generated app's own `postMessage` → `sandboxStore.ts` →
+  `POST /api/orders/event` relay therefore calls `enqueueAuditEvent()` **directly**, not through
+  `eventBus.ts`. Routing it through the bus's `notify`/`broadcast` tags would call
+  `sessionManager.broadcastFrame()` well outside any active session — which unconditionally
+  pushes onto the shared `backlog` array regardless of whether a build is active, so it would
+  silently leak a stale frame into the *next*, completely unrelated build's initial seed data.
+  `enqueueAuditEvent()` itself (the primitive the bus's own `auditDaemon.ts` calls) is the correct,
+  narrower tool for an independent, post-session event like this one — documented explicitly in
+  `orders.ts` so a future contributor doesn't "helpfully" route it through the bus for consistency.
+- **Endpoint validation matches this project's established pattern:** `POST /api/orders/event`
+  strictly validates (UUID `sessionId` via the same pattern as `sessionBundleRecorder.ts`, a
+  bounded finite `total`, a whitelisted `decision` enum) before calling `enqueueAuditEvent` —
+  same shape of defense as `recipeSerializer.ts`'s save-recipe validation.
+- **Verification — the full UOW-11 story, live, not just unit-level:** curl-driven checks first
+  (real vendor/catalog/ceilings/session-id embedded in the generated code; the bundle-folder split
+  fix confirmed directly on disk; `/api/orders/event`'s validation and audit-mapping confirmed for
+  both allowed and denied decisions). Then a **full production-mode Playwright run** (per Task
+  11.3's established environment workaround for this container's dev-mode HMR reload storm): typed
+  the entire interview into the real `nemzilla-cli` (`build` → vendor → catalog → threshold →
+  `andiamo`), confirmed the swarm-generated app rendered live in `<AppPreview/>`'s iframe, clicked
+  a real catalog item into the cart, submitted an order landing in the HITL band, watched the HITL
+  modal appear, approved it, saw the shipped notification — then confirmed server-side afterward
+  that `hitl_pending` and `hitl_approved` audit blocks were both recorded against the correct
+  session, hash-chained correctly. Zero console errors throughout. One real test-only bug found and
+  fixed along the way (not a product bug): the driver's scripted typing was fast enough to collide
+  with `AppPreview.tsx`'s own boot-time `connectGenerator('ACME Order')` demo for the
+  single-active-builder lock, briefly showing the ACME catalog instead of the swarm one — fixed by
+  waiting for that boot demo to finish first, matching how a real human's much slower typing would
+  never actually hit this race. `tsc -b`/`build`/`test:sse` all clean throughout.
+- **Risk/Debt:** `Lead Dev`'s synthesized app is still a single fixed shape (order-entry with a
+  catalog + cart + HITL gate) regardless of which domain agents were dispatched — `AI TODO`/
+  `AI Sport`/`AI SS`/`AI Food`'s schema fragments are referenced in Lead Dev's reasoning text and
+  recorded in the audit trail, but don't yet get their own rendered UI widgets in the generated
+  app (that would mean the synthesizer branching per dispatched agent, not just per catalog/policy
+  — a natural follow-on, not attempted here to keep this task's scope to what the guidance
+  explicitly asked for: order placement + HITL + audit). The `andiamo` command doesn't warn the
+  user if it ends up spectating an already-active build the way `run`/`triad` already do
+  (`⚠ a build is already active...`) — a small, easy follow-up, not done here since it wasn't
+  part of this task's stated scope.
+- **UOW-11 complete.** All 6 tasks across Phase 1 (artifact bundle + event bus), Phase 2
+  (conversational PO interviewer + swarm telemetry), and Phase 3 (pluggable domain agents +
+  Andiamo launch with live policy enforcement) are shipped and verified end to end, live, in a
+  real browser.
+- **Next Milestone:** whatever the user scopes next.
+
 ---
 
 # Architect Journal Entry: NemZilla Studio & Agent Swarm Pipeline

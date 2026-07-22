@@ -2,6 +2,7 @@ import { For, onCleanup, onMount } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import { createForceLayout, runLayoutSimulation } from '../lib/swarmLayout.ts'
 import { createSwarmStore, edgeKey, type AgentName, type AgentStatus } from '../lib/swarmStore.ts'
+import RnAvatar from './RnAvatar.tsx'
 
 interface AgentMeta {
   agent: AgentName
@@ -16,6 +17,9 @@ interface AgentLink {
 const RADIUS = 30
 const WIDTH = 480
 const HEIGHT = 220
+// RN brand-mark badge tucked into each node's bottom-right corner.
+const BADGE_SIZE = 16
+const BADGE_OFFSET = RADIUS * 0.72
 
 const AGENTS: AgentMeta[] = [
   { agent: 'Planner', role: 'Task decomposition' },
@@ -184,6 +188,13 @@ export default function SwarmCanvas() {
                 <text x={pos().x} y={pos().y + RADIUS + 16} text-anchor="middle" class="fill-text-muted text-[9px]">
                   {label()}
                 </text>
+                <RnAvatar
+                  x={pos().x + BADGE_OFFSET - BADGE_SIZE / 2}
+                  y={pos().y + BADGE_OFFSET - BADGE_SIZE / 2}
+                  width={BADGE_SIZE}
+                  height={BADGE_SIZE}
+                  class="drop-shadow-sm"
+                />
               </g>
             )
           }}

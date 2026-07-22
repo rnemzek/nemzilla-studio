@@ -1,13 +1,12 @@
 /**
- * UOW-11 Task 11.3: the conversational AI PO Discovery Interviewer, driven
- * as a deterministic finite-state machine — consistent with this project's
- * existing pattern (appGeneratorPrompt.ts's matchScenario/generateAppSnippet)
- * of simulating "AI" behavior with real, inspectable logic rather than a
- * live model call. Advances one user answer at a time; invalid input re-asks
- * the same stage instead of crashing or silently advancing.
+ * UOW-13: thin client for the real LLM-backed AI PO Discovery Interviewer.
+ * The FSM this replaced (UOW-11 Task 11.3) lived entirely in the browser;
+ * this module intentionally does almost nothing on its own — every turn is
+ * a POST to /api/po/interview, which is the ONLY place the Anthropic SDK
+ * runs (src/server/services/poInterviewLLM.ts). The API key must never
+ * reach client code, so there is no local parsing/extraction logic here
+ * anymore, just state bookkeeping and the network call.
  */
-
-export type PoInterviewStage = 'vendor_name' | 'catalog' | 'policy_threshold' | 'complete'
 
 export interface PoTranscriptEntry {
   role: 'po' | 'user'
@@ -22,11 +21,11 @@ export interface PoCatalogItem {
 
 export interface PoInterviewState {
   sessionId: string
-  stage: PoInterviewStage
+  transcript: PoTranscriptEntry[]
   vendorName: string | null
   catalog: PoCatalogItem[] | null
   hitlThreshold: number | null
-  transcript: PoTranscriptEntry[]
+  done: boolean
 }
 
 export interface PoInterviewStep {
@@ -42,106 +41,85 @@ export interface PoInterviewStep {
 // UI copy, not a secret.
 export const SYSTEM_ORDER_CEILING = 500
 
-const PROMPTS = {
-  vendor_name: 'What is the name of your vendor/company?',
-  catalog: 'What products and prices do you want in the catalog? (format: Name|$Price, Name|$Price, ...)',
-  policy_threshold: 'What policy ceiling should require supervisor sign-off? (e.g. "$100")',
-} as const
+interface PoInterviewApiResponse {
+  reply: string
+  vendorName: string | null
+  catalog: PoCatalogItem[] | null
+  hitlThreshold: number | null
+  done: boolean
+}
 
 function nowIso(): string {
   return new Date().toISOString()
 }
 
-function say(state: PoInterviewState, message: string): void {
-  state.transcript.push({ role: 'po', message, timestamp: nowIso() })
+/**
+ * `userMessage: null` requests the PO's opening line (no prior user turn
+ * exists yet) — used by createPoInterview()/startPoInterview(). Failures
+ * degrade to an in-character message rather than surfacing a raw HTTP error
+ * in the terminal.
+ */
+async function callInterviewApi(
+  transcript: PoTranscriptEntry[],
+  known: { vendorName: string | null; catalog: PoCatalogItem[] | null; hitlThreshold: number | null },
+  userMessage: string | null,
+): Promise<PoInterviewApiResponse> {
+  try {
+    const res = await fetch(`${window.location.origin}/api/po/interview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript, known, userMessage }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return (await res.json()) as PoInterviewApiResponse
+  } catch (err) {
+    console.error('poInterview: /api/po/interview call failed', err)
+    return {
+      reply: "Sorry, I'm having trouble reaching the discovery service right now — try again in a moment.",
+      ...known,
+      done: false,
+    }
+  }
 }
 
-function hear(state: PoInterviewState, message: string): void {
-  state.transcript.push({ role: 'user', message, timestamp: nowIso() })
+function applyTurn(state: PoInterviewState, data: PoInterviewApiResponse, userMessage: string | null): PoInterviewStep {
+  if (userMessage !== null) state.transcript.push({ role: 'user', message: userMessage, timestamp: nowIso() })
+  state.transcript.push({ role: 'po', message: data.reply, timestamp: nowIso() })
+  state.vendorName = data.vendorName
+  state.catalog = data.catalog
+  state.hitlThreshold = data.hitlThreshold
+  state.done = data.done
+  return { state, reply: data.reply, done: data.done }
 }
 
-export function createPoInterview(): PoInterviewState {
-  const state: PoInterviewState = {
+function createPoInterview(): PoInterviewState {
+  return {
     sessionId: crypto.randomUUID(),
-    stage: 'vendor_name',
+    transcript: [],
     vendorName: null,
     catalog: null,
     hitlThreshold: null,
-    transcript: [],
+    done: false,
   }
-  say(state, "Let's build your order entry application together.")
-  say(state, PROMPTS.vendor_name)
-  return state
 }
 
-function parseCatalog(raw: string): PoCatalogItem[] | null {
-  const items: PoCatalogItem[] = []
-  for (const part of raw.split(',')) {
-    const [namePart, pricePart] = part.split('|')
-    if (!namePart || !pricePart) return null
-    const name = namePart.trim()
-    const price = Number(pricePart.replace(/[^0-9.]/g, ''))
-    if (!name || !Number.isFinite(price) || price <= 0) return null
-    items.push({ name, price })
-  }
-  return items.length > 0 ? items : null
+/**
+ * Starts a fresh interview. `openingMessage`, when provided, is the user's
+ * own first line (from the CLI's multi-word fallback — see
+ * terminalCommands.ts) and is recorded as a real transcript turn; when
+ * omitted, the PO speaks first and nothing is recorded as having been said
+ * by the user yet.
+ */
+export async function startPoInterview(openingMessage?: string): Promise<PoInterviewStep> {
+  const state = createPoInterview()
+  const known = { vendorName: null, catalog: null, hitlThreshold: null }
+  const data = await callInterviewApi(state.transcript, known, openingMessage ?? null)
+  return applyTurn(state, data, openingMessage ?? null)
 }
 
-function parseThreshold(raw: string): number | null {
-  const match = raw.match(/\$?\s*(\d+(?:\.\d+)?)/)
-  if (!match) return null
-  const value = Number(match[1])
-  return Number.isFinite(value) && value > 0 ? value : null
-}
-
-/** Advances the interview by one user answer, mutating and returning `state`. */
-export function submitPoAnswer(state: PoInterviewState, userMessage: string): PoInterviewStep {
-  hear(state, userMessage)
-
-  switch (state.stage) {
-    case 'vendor_name': {
-      const name = userMessage.trim()
-      if (!name) {
-        const reply = "I didn't catch a name — what should I call your vendor/company?"
-        say(state, reply)
-        return { state, reply, done: false }
-      }
-      state.vendorName = name
-      state.stage = 'catalog'
-      const reply = `Great, "${name}" it is. ${PROMPTS.catalog}`
-      say(state, reply)
-      return { state, reply, done: false }
-    }
-    case 'catalog': {
-      const items = parseCatalog(userMessage)
-      if (!items) {
-        const reply = 'I couldn\'t parse that catalog — try the format "Name|$Price, Name|$Price" (e.g. "Mouse Pad|$5, Mouse|$15").'
-        say(state, reply)
-        return { state, reply, done: false }
-      }
-      state.catalog = items
-      state.stage = 'policy_threshold'
-      const reply = `Got it — ${items.length} item(s) catalogued. ${PROMPTS.policy_threshold}`
-      say(state, reply)
-      return { state, reply, done: false }
-    }
-    case 'policy_threshold': {
-      const threshold = parseThreshold(userMessage)
-      if (threshold === null) {
-        const reply = 'I need a dollar amount for the supervisor sign-off ceiling — e.g. "$100".'
-        say(state, reply)
-        return { state, reply, done: false }
-      }
-      state.hitlThreshold = threshold
-      state.stage = 'complete'
-      const reply = `We're all set! Default policies applied ($${threshold} HITL threshold). Type "Andiamo" to launch.`
-      say(state, reply)
-      return { state, reply, done: true }
-    }
-    case 'complete': {
-      const reply = 'Interview already complete — type "Andiamo" to launch, or "build" to start a new one.'
-      say(state, reply)
-      return { state, reply, done: true }
-    }
-  }
+/** Advances the interview by one user answer. */
+export async function submitPoAnswer(state: PoInterviewState, userMessage: string): Promise<PoInterviewStep> {
+  const known = { vendorName: state.vendorName, catalog: state.catalog, hitlThreshold: state.hitlThreshold }
+  const data = await callInterviewApi(state.transcript, known, userMessage)
+  return applyTurn(state, data, userMessage)
 }

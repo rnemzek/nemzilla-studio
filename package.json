@@ -11,6 +11,7 @@
     "test:sse": "tsx scripts/verify-agent-stream.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.113.0",
     "hono": "^4.10.5",
     "solid-js": "^1.9.13"
   },

@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient.ts'
-import { createPoInterview, submitPoAnswer, SYSTEM_ORDER_CEILING, type PoInterviewState } from './poInterview.ts'
+import { startPoInterview, submitPoAnswer, SYSTEM_ORDER_CEILING, type PoInterviewState } from './poInterview.ts'
 import { getSessionBundle, putSessionArtifact, type SessionBundle } from './sessionBundleClient.ts'
 import { sandboxStore } from './sandboxStore.ts'
 
@@ -28,6 +28,9 @@ const HELP_TEXT = [
   '  build             Start the AI PO discovery interview (vendor name, catalog, HITL threshold).',
   '  andiamo           Launch the swarm build from the completed interview into App Preview.',
   '  clear             Clear the terminal output.',
+  '',
+  'Tip: typing a full sentence instead of a command (e.g. "I want to build an',
+  'order entry app for my bakery") starts the AI PO interview automatically.',
 ]
 
 function parseFrame(chunk: string): { event: string; data: Record<string, unknown> } {
@@ -132,16 +135,17 @@ function printPo(ctx: CommandContext, message: string) {
   ctx.print(message, 'po')
 }
 
-function printPoLines(ctx: CommandContext, state: PoInterviewState, fromIndex: number) {
-  for (let i = fromIndex; i < state.transcript.length; i++) {
-    const entry = state.transcript[i]!
-    if (entry.role === 'po') printPo(ctx, entry.message)
-  }
-}
-
-function startInterview(ctx: CommandContext) {
-  activeInterview = createPoInterview()
-  printPoLines(ctx, activeInterview, 0)
+/**
+ * Starts a fresh interview. `openingMessage`, when given, is real user text
+ * that failed to match any known command (the CLI fallback in runCommand())
+ * — it becomes the first real turn of the conversation instead of being
+ * discarded, so a sentence like "I want to build an order entry app for my
+ * bakery" isn't wasted on a "command not found" error.
+ */
+async function startInterview(ctx: CommandContext, openingMessage?: string): Promise<void> {
+  const step = await startPoInterview(openingMessage)
+  activeInterview = step.state
+  printPo(ctx, step.reply)
 }
 
 /** Best-effort persistence — Task 11.1's session bundle recorder; failures are logged client-side but never block the conversation. */
@@ -159,23 +163,38 @@ async function persistInterviewArtifacts(state: PoInterviewState): Promise<void>
   }
 }
 
+/**
+ * Meta-commands intercepted locally, for free, before ever reaching the LLM
+ * — "help" or "clear" typed mid-interview must never be sent to the model
+ * as if they were an answer (the old FSM's exact failure mode: it would
+ * have literally set e.g. vendorName = "help"). Genuine natural-language
+ * questions or off-topic remarks are NOT intercepted here — handling those
+ * gracefully is the model's job now, not a fixed keyword list's.
+ */
+const INTERVIEW_META_COMMANDS = new Set(['cancel', 'exit', 'quit'])
+
 async function continueInterview(ctx: CommandContext, rawInput: string): Promise<void> {
   const state = activeInterview!
+  const lower = rawInput.toLowerCase()
 
-  if (rawInput.toLowerCase() === 'cancel') {
+  if (INTERVIEW_META_COMMANDS.has(lower)) {
     printPo(ctx, 'Interview cancelled.')
     activeInterview = null
     return
   }
+  if (lower === 'help') {
+    HELP_TEXT.forEach((line) => ctx.print(line, 'output'))
+    return
+  }
+  if (lower === 'clear') {
+    ctx.clear()
+    return
+  }
 
-  const beforeLength = state.transcript.length
-  const { done } = submitPoAnswer(state, rawInput)
-  // submitPoAnswer already appended the user's line to the transcript before
-  // the PO's reply — only print the PO's own new line(s), the user's answer
-  // was already echoed by Terminal.tsx's `$ ${value}` print before dispatch.
-  printPoLines(ctx, state, beforeLength + 1)
+  const step = await submitPoAnswer(state, rawInput)
+  printPo(ctx, step.reply)
 
-  if (done) {
+  if (step.done) {
     await persistInterviewArtifacts(state)
     printPo(ctx, `Discovery interview recorded (session ${state.sessionId}).`)
   }
@@ -191,7 +210,7 @@ function summarizeBundle(ctx: CommandContext, sessionId: string, bundle: Session
 }
 
 async function runAndiamo(ctx: CommandContext): Promise<void> {
-  if (!activeInterview || activeInterview.stage !== 'complete') {
+  if (!activeInterview || !activeInterview.done) {
     ctx.print('No completed discovery interview yet — type "build" to start one.', 'error')
     return
   }
@@ -235,9 +254,10 @@ export async function runCommand(rawInput: string, ctx: CommandContext): Promise
   if (!trimmed) return
 
   // While an interview is in progress, every line is an answer to the AI PO
-  // (or "cancel") rather than a shell command — a chat interface, not a
-  // command dispatcher, until the interview reaches its 'complete' stage.
-  if (activeInterview && activeInterview.stage !== 'complete') {
+  // (or a meta-command like "cancel"/"help"/"clear") rather than a shell
+  // command — a chat interface, not a command dispatcher, until the
+  // interview is done.
+  if (activeInterview && !activeInterview.done) {
     await continueInterview(ctx, trimmed)
     return
   }
@@ -265,12 +285,21 @@ export async function runCommand(rawInput: string, ctx: CommandContext): Promise
       runLaunch(ctx, args[0])
       break
     case 'build':
-      startInterview(ctx)
+      await startInterview(ctx)
       break
     case 'andiamo':
       await runAndiamo(ctx)
       break
     default:
-      ctx.print(`command not found: ${command} (type "help" for a list)`, 'error')
+      // UOW-13 CLI fallback: a genuinely unparsed *multi-word* string reads
+      // as a natural-language request, not a mistyped command — start the
+      // AI PO interview with it as the opening turn instead of erroring.
+      // A single unrecognized word stays a plain error (cheap typos
+      // shouldn't silently trigger a billed LLM call).
+      if (args.length > 0) {
+        await startInterview(ctx, trimmed)
+      } else {
+        ctx.print(`command not found: ${command} (type "help" for a list)`, 'error')
+      }
   }
 }

@@ -291,7 +291,7 @@ async function runSwarmPipeline(sessionId: string, swarmSessionId: string): Prom
     hitlThreshold: policyRules.hitlThreshold,
   }
 
-  const dispatched = dispatchDomainAgents({
+  const dispatched = await dispatchDomainAgents({
     vendorName: catalog.vendorName,
     catalogItemNames: catalog.items.map((item) => (item as { name: string }).name),
   })

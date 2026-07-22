@@ -36,3 +36,6 @@ playwright-report/
 blob-report/
 .nyc_output/
 .claude/skills/*/screenshots/
+
+# Stray local chat/journal exports
+gemini-chat*.md

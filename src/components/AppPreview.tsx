@@ -1,6 +1,7 @@
-import { For, onCleanup, onMount } from 'solid-js'
-import { createSandboxStore, type PreviewTab } from '../lib/sandboxStore.ts'
+import { For, Show, onCleanup, onMount } from 'solid-js'
+import { sandboxStore, type PreviewTab } from '../lib/sandboxStore.ts'
 import { SANDBOX_FRAME_PATH } from '../lib/sandboxTemplate.ts'
+import SaveRecipeModal from './SaveRecipeModal.tsx'
 
 const DEFAULT_PROMPT = 'ACME Order'
 
@@ -17,7 +18,7 @@ const TABS: Array<{ id: PreviewTab; label: string }> = [
 ]
 
 export default function AppPreview() {
-  const sandbox = createSandboxStore()
+  const sandbox = sandboxStore
   let frameRef: HTMLIFrameElement | undefined
 
   onMount(() => {
@@ -52,7 +53,12 @@ export default function AppPreview() {
             )}
           </For>
         </div>
-        <span class="font-mono text-xs text-text-muted">{STATUS_LABEL[sandbox.state.status]}</span>
+        <div class="flex items-center gap-2">
+          <Show when={sandbox.state.status === 'ready'}>
+            <SaveRecipeModal />
+          </Show>
+          <span class="font-mono text-xs text-text-muted">{STATUS_LABEL[sandbox.state.status]}</span>
+        </div>
       </div>
 
       <div class="h-80" classList={{ hidden: sandbox.state.tab !== 'preview' }}>

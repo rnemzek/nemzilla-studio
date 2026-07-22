@@ -1,5 +1,6 @@
 import { createStore } from 'solid-js/store'
 import { SANDBOX_FRAME_PATH, SANDBOX_MESSAGE, buildSandboxDocument } from './sandboxTemplate.ts'
+import { reportRole } from './sessionRoleStore.ts'
 
 export type PreviewStatus = 'idle' | 'building' | 'ready' | 'error'
 export type PreviewTab = 'preview' | 'source'
@@ -98,6 +99,7 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
 
   function connectGenerator(prompt: string): () => void {
     const controller = new AbortController()
+    let releaseRole: (() => void) | null = null
     setState({ code: '', status: 'building', errorMessage: null })
 
     ;(async () => {
@@ -120,7 +122,15 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
             const { event, data } = parseFrame(buffer.slice(0, boundary))
             buffer = buffer.slice(boundary + 2)
 
-            if (event === 'generated_app_payload') {
+            if (event === 'session_role') {
+              // Single-active-builder model: this connection may end up
+              // spectating someone else's build (a Cookbook launch, another
+              // tab, a Terminal `run`) rather than the prompt it asked for —
+              // whatever generated_app_payload arrives is still rendered
+              // either way, it just might belong to a different scenario.
+              releaseRole?.()
+              releaseRole = reportRole(data.role === 'builder' ? 'builder' : 'spectator')
+            } else if (event === 'generated_app_payload') {
               const code = typeof data.code === 'string' ? data.code : ''
               if (data.done) setCode(code)
               else appendCodeChunk(code)
@@ -132,6 +142,8 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
       } catch (err) {
         if (controller.signal.aborted) return
         setState({ status: 'error', errorMessage: err instanceof Error ? err.message : String(err) })
+      } finally {
+        releaseRole?.()
       }
     })()
 
@@ -168,3 +180,12 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
 
   return { state, setTab, setCode, attachFrame, connectGenerator }
 }
+
+/**
+ * The app mounts exactly one `<AppPreview />`, but `CookbookDropdown.tsx`
+ * (in the header, a sibling component) also needs to trigger generation and
+ * instant-replay saved sessions into the same preview — so this singleton
+ * is shared between the two rather than each holding its own independent
+ * store, which would leave the dropdown's actions invisible to the preview.
+ */
+export const sandboxStore = createSandboxStore()

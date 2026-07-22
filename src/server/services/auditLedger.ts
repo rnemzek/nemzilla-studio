@@ -14,6 +14,8 @@ export interface AuditBlock {
   policyStatus: PolicyStatus
   prevHash: string
   hash: string
+  /** Not part of the hash formula (metadata only) — lets a completed build's own trail be filtered out via getSessionAuditBlocks(). */
+  sessionId?: string
 }
 
 const GENESIS_HASH = '0'.repeat(64)
@@ -28,6 +30,7 @@ interface PendingEvent {
   action: string
   payload: unknown
   policyStatus: PolicyStatus
+  sessionId?: string
 }
 
 const queue: PendingEvent[] = []
@@ -68,6 +71,7 @@ async function drainQueue(): Promise<void> {
         policyStatus: event.policyStatus,
         prevHash,
         hash,
+        sessionId: event.sessionId,
       }
 
       chain.push(block)
@@ -87,14 +91,32 @@ async function drainQueue(): Promise<void> {
 }
 
 /** Non-blocking: enqueues and returns immediately. Hashing/persistence happen on a background drain. */
-export function enqueueAuditEvent(action: string, payload: unknown, policyStatus: PolicyStatus = 'allowed'): void {
+export function enqueueAuditEvent(
+  action: string,
+  payload: unknown,
+  policyStatus: PolicyStatus = 'allowed',
+  sessionId?: string,
+): void {
   if (queue.length >= QUEUE_CAPACITY) queue.shift()
-  queue.push({ action, payload, policyStatus })
+  queue.push({ action, payload, policyStatus, sessionId })
   setImmediate(drainQueue)
 }
 
 export function getChainBacklog(limit = BACKLOG_SIZE): AuditBlock[] {
   return chain.slice(-limit)
+}
+
+/**
+ * All blocks tagged with a given sessionId — used to correlate a completed
+ * build's own audit trail for session serialization. Filtering by sessionId
+ * (rather than an index range captured before/after the run) stays correct
+ * even when a new build's own audit events start landing in the chain
+ * before this one's last few events have finished draining — which happens
+ * routinely, since a fresh connection can claim the next build immediately
+ * after this one ends.
+ */
+export function getSessionAuditBlocks(sessionId: string): AuditBlock[] {
+  return chain.filter((block) => block.sessionId === sessionId)
 }
 
 function subscribe(cb: (block: AuditBlock) => void): () => void {

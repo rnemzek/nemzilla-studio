@@ -55,14 +55,19 @@ function parseFrame(chunk: string): { event: string; data: Record<string, unknow
 
 export interface SwarmStore {
   state: SwarmState
-  /** Opens a fresh SSE connection to /api/agent/stream. Returns a function to disconnect. */
+  /** Opens a fresh SSE connection to /api/agent/spectate. Returns a function to disconnect. */
   connect: () => () => void
 }
 
 /**
- * Owns the swarm's reactive state and knows how to parse `/api/agent/stream`
+ * Owns the swarm's reactive state and knows how to parse `/api/agent/spectate`
  * SSE frames (`agent_step`, `token_stream`, `metric_tick`, `system_alert`)
- * into per-agent statuses and per-edge "data in transit" flags:
+ * into per-agent statuses and per-edge "data in transit" flags. This is a
+ * pure spectator connection (never `/api/agent/stream`) — the swarm canvas
+ * only ever *visualizes* whatever build is active server-wide (see
+ * sessionManager.ts's single-active-builder model); it never itself starts
+ * an unprompted build, which would otherwise race AppPreview/Terminal for
+ * the builder role and could win it with no prompt attached.
  *
  *   idle -> active (agent_step EXECUTING) -> thinking (token_stream)
  *        -> active (metric_tick, wrapping up) -> completed (agent_step DONE)
@@ -125,7 +130,7 @@ export function createSwarmStore(): SwarmStore {
 
     ;(async () => {
       try {
-        const res = await apiClient.api.agent.stream.$get(undefined, {
+        const res = await apiClient.api.agent.spectate.$get(undefined, {
           init: { signal: controller.signal },
         })
         if (!res.body) throw new Error('agent stream: empty response body')

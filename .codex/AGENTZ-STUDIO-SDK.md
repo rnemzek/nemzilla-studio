@@ -40,12 +40,27 @@ Every generated micro-app inside the AgentZ Sandbox is built upon three unified 
 - **Rule/Task Engine:** Interactive checklist for weekend errands (Lowe's mulch, Jiffy Lube inspection).
 - **Virtual Bus Alerts:** Timed notifications ("5:00 PM: Get groceries for Chicken Salad", "7:30 PM: Orioles vs. Yankees starting on YouTubeTV").
 
+### Scenario 3: B2B Lead Scoring Bot (Synthetic / Policy Focus)
+- **Entities:** A lead-intake form (company size, monthly budget, urgency) + a running list of
+  scored leads.
+- **Rules Engine:** Weighted score = `sizeWeight(size) + min(budget / 100, 30) + urgencyWeight(urgency)`.
+  - `Score >= 80` → **Hot Lead** — triggers a simulated outbound webhook alert.
+  - `40 <= Score < 80` → **Warm Lead**.
+  - `Score < 40` → **Cold Lead**.
+- **Lifecycle Events:** Lead Scored → (if Hot) Simulated Webhook POST logged to a "Webhook Alert
+  Log" panel (`POST https://hooks.crm.example/lead-alert -> 200 OK`).
+- Implemented in `appGeneratorPrompt.ts`'s `B2B_LEAD_SCORING_SNIPPET`; matched via a prompt
+  containing "lead", "b2b", or "scoring" (see `matchScenario()`).
+
 ---
 
 ## 4. Multi-User & Concurrency Strategy
 - **Single-Active Sandbox + Spectator Mode:** To prevent Railway container resource exhaustion, the live server maintains **one active builder session** at a time.
 - **Spectator Mode:** Secondary visitors connecting to `nemzilla.net` enter read-only Spectator Mode, watching active builds stream live in real time.
 - **Preset Gallery:** Completed runs are serialized to `.codex/demos/[session-id].json` and accessible via an "AgentZ Cookbook" dropdown menu.
+- **Implementation (UOW-09):** This is not just a policy statement — it's a literal server-wide
+  execution lock. See section 11 (Single-Active Builder & Spectator Lock Flow) for the full
+  mechanics of `src/server/services/sessionManager.ts`.
 
 ---
 
@@ -56,24 +71,6 @@ Every generated micro-app inside the AgentZ Sandbox is built upon three unified 
 ---
 
 ### Architectural Diagram: The AgentZ Dual-Engine App
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                 The AgentZ Dual-Engine App                  │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  [ Engine A: Synthetic / State ]                            │
-│  • In-Memory Data / Catalog (ACME Orders, Products)        │
-│  • Rule Interceptor (<= $100 Auto-Approve, > $500 Deny)     │
-│  • Virtual Notification Drawer (Simulated Email / SMS)      │
-│                                                             │
-│  [ Engine B: Live Web / Action Kit ]                        │
-│  • Direct CORS-Friendly Fetching (MLB GUMBO, TheMealDB, etc)│
-│  • On-the-Fly Dynamic HTTP Parsing (Public JSON Endpoints)  │
-│  • Real-Time Data Binding into the Generated UI             │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -164,3 +161,184 @@ reads `Verified Valid` only if every recomputed hash matches what was streamed.
 
 ---
 
+## 8. Top-Level NemZilla Studio Platform Layout
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│ NemZilla Studio Header                                                                  │
+│ [ ☰ Command Drawer ]  [ 📖 AgentZ Bible ]  [ Preset Cookbook ▾ ]        🟢 ACTIVE BUILDER │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                    ┌─────────────────────┴─────────────────────┐
+                    ▼                                           ▼
+┌────────────────────────────────────────┐   ┌────────────────────────────────┐
+│ Agent Workflow & Swarm Canvas          │   │ Multi-Tab Sandboxed Runtime    │
+│ • Lead Architect / Dev Node Reasoning  │   ├────────────────────────────────┤
+│ • Token-by-Token App Code Stream       │   │ [ App Preview ]                │
+│ • Live Execution Telemetry             │   │ [ Source Code ]                │
+└────────────────────────────────────────┘   │ [ 🛡️ Cryptographic Audit ]     │
+                                              └────────────────────────────────┘
+```
+
+**Current implementation status** (as of UOW-10 — see uow-09.md/uow-10.md for the history):
+- **Header:** `EcosystemNav.tsx` — brand mark + `CommandCenterDrawer.tsx` (`☰ Command Center`,
+  top-left) on one side; `BibleModal.tsx` (`📖 AgentZ Bible`), `CookbookDropdown.tsx`
+  (`Preset Cookbook ▾`), and the role badge (`🟢 ACTIVE BUILDER` / `👀 SPECTATOR MODE`, via
+  `sessionRoleStore.ts`) on the other. The old inline Robert/Streaming/Grid links were replaced
+  by the Command Center drawer's rich cards in UOW-10 — the diagram above is now fully built,
+  not aspirational.
+- **Agent Workflow & Swarm Canvas:** `SwarmCanvas.tsx`, spectating (`/api/agent/spectate`) the
+  single active build server-wide rather than running its own.
+- **Multi-Tab Sandboxed Runtime:** `AppPreview.tsx` — the `[ App Preview ]` / `[ Source Code ]`
+  tabs from UOW-06, a `[ 💾 Save to Cookbook ]` action in the header bar once a build completes
+  (see section 12), plus a **third panel** (not a third internal tab) for the Cryptographic
+  Audit Ledger — `AuditLedgerPanel.tsx`, mounted alongside `Terminal`/`AppPreview` in `App.tsx`'s
+  3-column grid, not nested inside `AppPreview`'s own tab bar.
+
+---
+
+## 9. Governance & System Ceilings Matrix
+
+| Concern | System Ceiling (hard) | User-Defined Bound | Enforcement |
+|---|---|---|---|
+| API call rate | 20 requests/min (global) | — not user-customizable | `checkRateLimit()` → `429` + audit `denied` |
+| Order auto-deny boundary | $500 | — not user-customizable | Fixed `SYSTEM_CEILING.maxOrderThreshold`, embedded in every ACME snippet |
+| Order auto-approve threshold | $250 (`maxAutoApproveThreshold`) | Any value ≤ $250 honored as-is | `resolveOrderThreshold()` clamps requests > $250 down to $250; clamp is audit-logged `clamped` |
+| Forbidden operations | `delete_all_orders`, `disable_policy_engine`, `bypass_hitl` | — cannot be overridden | `checkForbiddenOperation()` refuses generation outright; audit-logged `denied` |
+| Concurrent builds | 1 (server-wide) | — cannot be overridden | `sessionManager.claimSession()` — see section 11 |
+| Audit log retention | 72 hours (on-disk files) | — not user-customizable | `pruneOldLogs()` sweep, startup + every 30 min |
+
+The auto-approve ceiling ($250) is deliberately **lower** than the auto-deny boundary ($500), not
+equal to it — see section 6B for why collapsing them produces a degenerate HITL band.
+
+---
+
+## 10. Cryptographic Merkle Hash Chain Flow
+
+```
+ enqueueAuditEvent(action, payload, policyStatus, sessionId)
+        │  (non-blocking: push to in-memory ring buffer, return immediately)
+        ▼
+ ┌─────────────────┐   setImmediate    ┌──────────────────────────────────┐
+ │  pending queue   │ ────────────────▶ │        drainQueue() worker        │
+ │  (cap: 200)      │                   │  prevHash = chain.at(-1).hash     │
+ └─────────────────┘                   │        (or GENESIS_HASH if empty) │
+                                        │  hash = SHA256(prevHash           │
+                                        │              + timestamp          │
+                                        │              + JSON(payload))     │
+                                        └───────────────┬───────────────────┘
+                                                         ▼
+                              ┌──────────────────────────────────────────┐
+                              │  block = { index, timestamp, action,      │
+                              │    payload, policyStatus, prevHash, hash, │
+                              │    sessionId }                            │
+                              └───────┬───────────────────┬───────────────┘
+                                      ▼                   ▼
+                     chain.push(block)          persist to .codex/audits/
+                     (cap: 2,000 in memory)      audit-YYYY-MM-DD.jsonl
+                                      │
+                                      ▼
+                     broadcast to subscribers → GET /api/audit/stream
+                                      │
+                                      ▼
+                 AuditLedgerPanel.tsx: crypto.subtle.digest() independently
+                 recomputes SHA256(prevHash + timestamp + JSON(payload)) for
+                 every streamed block and compares to the reported hash —
+                 "Verified Valid" only if every recomputation matches AND
+                 each block's prevHash matches the previous block's hash.
+```
+
+---
+
+## 11. Single-Active Builder & Spectator Lock Flow
+
+```
+                        GET /api/agent/stream  or  GET /api/agent/spectate
+                                          │
+                                          ▼
+                          sessionManager.claimSession()
+                          (/spectate always returns 'spectator'
+                           without calling claimSession() at all)
+                                          │
+                    ┌─────────────────────┴─────────────────────┐
+                    ▼ no build active                            ▼ a build is already active
+         role = 'builder'                                role = 'spectator'
+         runPipeline(sessionId, prompt) starts,            subscribes to the SAME
+         broadcasting every SSE frame via                   broadcastFrame() stream —
+         sessionManager.broadcastFrame()                    never starts its own pipeline
+                    │                                                    │
+                    └─────────────────────┬──────────────────────────────┘
+                                          ▼
+                      EVERY connection (builder + all spectators) is
+                      "just" a subscriber to the shared broadcast — the
+                      only difference is which one is driving the pipeline.
+                                          │
+                                          ▼
+                    pipeline runs to completion (or the builder's own
+                    connection aborts, via requestAbort(sessionId))
+                                          │
+                                          ▼
+                      endSession(sessionId) → broadcasts 'session_ended' →
+                      every subscribed connection (builder + spectators)
+                      relays it and closes its own SSE stream → lock released
+                                          │
+                                          ▼
+                         next incoming connection can claim 'builder'
+```
+
+**Why SwarmCanvas connects to `/api/agent/spectate`, never `/api/agent/stream`:** if it used
+`/api/agent/stream` with no prompt, it could win the builder race on a page load before
+`AppPreview`'s prompted connection arrives, running an unprompted, generated_app_payload-less
+build that `AppPreview` would then just spectate — silently breaking the "boots with the ACME
+Order demo" behavior from UOW-07. `/api/agent/spectate` is a dedicated endpoint that *never*
+calls `claimSession()`, so a pure-visualization consumer can never accidentally start a build.
+
+---
+
+## 12. AgentZ Cookbook & Session Replay
+
+- **`src/lib/cookbookPresets.ts`:** the 3 flagship scenarios (id, label, description, and the
+  `prompt` string sent to `/api/agent/stream`), rendered by `CookbookDropdown.tsx` in the header.
+  Launching a preset calls `sandboxStore.connectGenerator(preset.prompt)` — if a build is already
+  active, this becomes a spectator of it rather than a competing build, per section 11.
+- **`src/server/services/sessionSerializer.ts`:** once a build completes (after "pipeline
+  complete", not right after code generation — the pipeline keeps running through the Reviewer
+  stage for another ~1s past that point), `recordCompletedBuild()` writes
+  `.codex/demos/[session-id].json`: `{ sessionId, scenario, prompt, code, timestamp,
+  auditBlocks }`. `auditBlocks` is filtered by `sessionId` (via `getSessionAuditBlocks()`), not by
+  a timing-based index range — a later build's own audit events can start landing in the shared
+  chain almost immediately after this one ends, and index-range filtering was found to leak them
+  into the wrong session's record during verification (see uow-09.md).
+- **Instant replay:** `CookbookDropdown.tsx` also lists saved runs (`GET /api/sessions`); picking
+  one fetches the full record (`GET /api/sessions/:id`) and calls `sandboxStore.setCode(record.code)`
+  directly — "instantly," per the DoD wording, means loading the saved app immediately rather
+  than re-animating the ~2s simulated pipeline.
+- **"Save to Cookbook" recipe archiving (UOW-10):** a `[ 💾 Save to Cookbook ]` button appears in
+  `AppPreview.tsx`'s header once `sandboxStore.state.status === 'ready'`. `SaveRecipeModal.tsx`
+  prompts for a Recipe Name, Description, and Category Tag (`Governance` / `Live Web Fetch` /
+  `Custom Workflow`); `src/lib/recipeStore.ts` saves the result to `localStorage`
+  (`nemzilla-studio:recipes`, the source of truth for the dropdown's instant-access display) and
+  archives it server-side via `POST /api/sessions/save-recipe` → `.codex/demos/custom-[recipe-id].json`
+  (`src/server/services/recipeSerializer.ts`). The `custom-` filename prefix keeps these separate
+  from auto-serialized build runs in the same directory — `listSavedSessions()` explicitly skips
+  it, so `CookbookDropdown.tsx` shows two distinct sections: "AgentZ Cookbook (saved runs)" (every
+  completed build, auto-named by scenario) and "⭐ My Saved Recipes" (user-curated, named saves).
+  Recipe archival is intentionally best-effort on the server side — the `localStorage` copy is
+  saved first and is what actually drives the UI, so a failed archive POST is logged but non-fatal.
+
+---
+
+## 13. Command Center & AgentZ Bible Viewer (UOW-10)
+
+- **`src/components/CommandCenterDrawer.tsx`:** a real slide-out panel (`translate-x-0` /
+  `-translate-x-full`, always mounted so the transition can actually animate — a conditionally
+  mounted panel has no element present partway through a slide) listing four ecosystem modules as
+  rich cards (icon, description, hover state): NemZilla Studio (marked "Current"), Robert Nemzek,
+  StreamZilla, GridZilla. Replaces the old inline header links entirely.
+- **`src/components/BibleModal.tsx`** + **`src/lib/markdown.ts`:** renders this file live inside
+  the app. `GET /api/bible` (`src/server/routes/bible.ts`) reads `.codex/AGENTZ-STUDIO-SDK.md`
+  fresh off disk per request rather than a build-time bundle, since this doc keeps being rewritten
+  UOW over UOW and a static import would go stale in a running production server until redeploy.
+  `markdown.ts` is a small hand-rolled parser (headings, fenced code blocks, bold/inline-code/
+  links, lists, GFM tables, hr) covering exactly the syntax this doc uses — not a general-purpose
+  CommonMark implementation, and deliberately not a new dependency.

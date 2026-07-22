@@ -219,6 +219,97 @@
   committed regression test for the concurrency race specifically (manual soak only).
 - **Next Milestone:** whatever the user scopes next.
 
+### UOW-09 Sync — AgentZ Cookbook Presets, Spectator Mode & SDK Bible Consolidation — 2026-07-22
+- **Architecture decision (architect-directed):** flagged that "one active builder session" had
+  two readings — guard only prompted builds, or unify every pipeline execution server-wide
+  (matching the SDK doc's literal wording but changing `SwarmCanvas`'s already-shipped behavior).
+  Directed to build **full unification**: one shared execution loop, everything else spectates.
+- **`sessionManager.ts`:** `claimSession()` (first caller = `'builder'`, rest = `'spectator'`),
+  `broadcastFrame`/`subscribe` pub/sub (mirrors `auditLedger.ts`'s pattern), abort/end handling
+  that releases the lock the instant the builder's own connection drops or the run completes.
+- **`agentStream.ts` refactor:** the simulation moved into `runPipeline()`, broadcasting instead
+  of writing to one HTTP stream; a shared `serveSessionStream()` serves both the primary
+  `/api/agent/stream` (claims a role) and the new always-spectate `/api/agent/spectate`
+  (`SwarmCanvas` now uses this — it can never win the builder race with no prompt attached,
+  which would have silently broken `AppPreview`'s ACME Order boot demo from UOW-07).
+- **Cookbook:** `cookbookPresets.ts` + `CookbookDropdown.tsx` (header, one-click launch + saved-
+  run instant replay) + `sessionRoleStore.ts` (drives the `🟢 ACTIVE BUILDER` / `👀 SPECTATOR
+  MODE` header badge). Third flagship scenario added: **B2B Lead Scoring Bot**.
+- **Real bug found via verification, not assumed correct from the code:** session serialization
+  first captured audit blocks by index-range right after Lead Dev generated code — checking the
+  actual written file showed only 9 of 11 expected events; the run keeps going for another ~1s
+  (Lead Dev's own DONE + the whole Reviewer stage). Worse, even moved to fire after full
+  completion, index-range filtering can't distinguish this session's tail events from a *new*
+  build's events landing moments later. Fixed by tagging every audit event with its owning
+  `sessionId` and filtering on that instead of timing — verified the serialized record now
+  contains exactly this session's 11 events, all correctly tagged.
+- **Verification:** `tsc -b`/`build`/`test:sse` clean, including a new dedicated spectator-mode
+  test (builder + 2 concurrent spectators mirror an identical `agent_step` sequence, lock
+  releases correctly afterward — not stuck). Real prod boot unaffected. Playwright: two tabs
+  opened near-simultaneously render the *identical* generated app (confirmed via the sandboxed
+  iframe's own heading) rather than two independent generations; Terminal's `run` correctly
+  reports spectating when a build's already active; instant replay confirmed to skip the ~2s
+  pipeline re-animation (status stays `ready` throughout). Zero console errors throughout.
+- **Risk/Debt:** `SwarmCanvas` doesn't auto-reconnect after a build ends; the aspirational
+  layout diagram's Command Drawer / in-app Bible viewer weren't built (not in the numbered DoD,
+  documented as an explicit trim in the SDK doc itself); `.codex/demos/` has no retention worker.
+- **Next Milestone:** whatever the user scopes next.
+
+### UOW-10 Sync — Command Center Drawer, Navigation Polish & AgentZ Bible Viewer — 2026-07-22
+- **Command Center:** `CommandCenterDrawer.tsx` replaces the old inline Robert/Streaming/Grid
+  header links with a `☰ Command Center` slide-out drawer (top-left, next to the brand mark) —
+  four rich cards (icon, description, hover state) for NemZilla Studio ("Current"), Robert
+  Nemzek, StreamZilla, GridZilla. Built as an always-mounted panel with a toggled
+  `translate-x`/`-translate-x-full` class (not conditional `<Show>` mount) so the slide actually
+  animates — a mount/unmount toggle can't transition, there's no element present partway through.
+- **AgentZ Bible viewer:** `BibleModal.tsx` + a new hand-rolled `src/lib/markdown.ts` (headings,
+  code fences, bold/inline-code/links, lists, GFM tables — not a new dependency, matching this
+  project's consistent no-new-runtime-deps pattern) + `GET /api/bible`
+  (`src/server/routes/bible.ts`), which reads `.codex/AGENTZ-STUDIO-SDK.md` fresh off disk per
+  request rather than a build-time bundle — deliberate, since this doc has been rewritten in
+  every one of the last four UOWs and a static import would show stale content in a running prod
+  server until redeploy.
+- **Header cleanup:** `EcosystemNav.tsx` restructured — brand + Command Center left, Bible /
+  Cookbook / role badge right, per the DoD's stated order once Command Center's explicit
+  top-left placement is accounted for. Responsive: icon-only below `sm`, `flex-wrap` safety net.
+- **Real issue hunted down during verification, but not caused by this UOW's code:** first
+  browser pass showed the page stuck in a reload loop (rate limiter tripping, Vite's HMR client
+  log repeating). Traced via `framenavigated` logging to two stray leftover `tsx watch
+  server.ts` processes from earlier in this session, each with its own file watcher reacting to
+  this UOW's source edits and pushing conflicting HMR signals — exactly the `npm run dev &`
+  wrapper-doesn't-forward-SIGTERM gotcha the project's own run-skill already documents. Verified
+  each stray PID's cwd before killing anything (two *other*, unrelated legitimate Vite instances
+  for different projects were also running on the machine and were left untouched). Reran the
+  identical verification script unmodified afterward — passed cleanly, confirming the code itself
+  was never the problem.
+- **Verification:** `tsc -b`/`build`/`test:sse` clean; real prod boot serves `/api/bible`
+  correctly; Playwright at 375px/768px/1500px confirmed zero horizontal overflow at every width,
+  a genuine slide transition (drawer bounding box `x: 0` open → `x: -384` closed, not a CSS
+  no-op), the Bible modal rendering real multi-section content and closing cleanly, zero console
+  errors throughout.
+- **Risk/Debt:** `markdown.ts` only covers the syntax this one doc actually uses (no nested
+  lists/blockquotes/images); the doc's pre-existing `$\rightarrow$` LaTeX-style arrows render as
+  literal text (not something this viewer should silently rewrite); no committed automated test
+  for the drawer/modal UI (manual Playwright only, matching this project's existing pattern for
+  UI-only components).
+- **Add-on — Recipe archiving:** `SaveRecipeModal.tsx` + `src/lib/recipeStore.ts` add a
+  `[ 💾 Save to Cookbook ]` action to `AppPreview.tsx`'s header once a build is `ready` —
+  `localStorage` is the immediate source of truth for display, with a best-effort
+  `POST /api/sessions/save-recipe` (`recipeSerializer.ts`, server-validates id/category/lengths)
+  archiving to `.codex/demos/custom-[recipe-id].json`. `sessionSerializer.ts` now skips
+  `custom-*.json` so "AgentZ Cookbook (saved runs)" and the new "⭐ My Saved Recipes" section in
+  `CookbookDropdown.tsx` stay distinct.
+- **Add-on — Diagram audit:** re-read `AGENTZ-STUDIO-SDK.md` fresh and confirmed all 5 requested
+  diagrams present. Found and fixed two real pre-existing issues while auditing: a duplicated
+  Dual-Engine Architecture diagram (two near-identical copies, dating to before UOW-06) and a
+  stale section-8 claim that the Command Drawer/Bible buttons "are not built" — false as of this
+  same UOW. Added section 13 documenting the new components.
+- **Add-on verification:** `tsc -b`/`build`/`test:sse` clean; prod boot confirms
+  `POST /api/sessions/save-recipe` returns 400 on bad input, 200 + correct file on valid input;
+  Playwright confirmed the full save → localStorage + server file → dropdown → instant-replay
+  flow end to end, zero console errors.
+- **Next Milestone:** whatever the user scopes next.
+
 ---
 
 # Architect Journal Entry: NemZilla Studio & Agent Swarm Pipeline

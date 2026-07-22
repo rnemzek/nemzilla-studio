@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-08 - AgentZ Governance Engine & Cryptographic Audit Ledger
-- **Active Task**: UOW-08 complete — ready for next UOW
+- **Current UOW**: UOW-10 - Command Center Drawer, Navigation Polish & AgentZ Bible Viewer
+- **Active Task**: UOW-10 complete — ready for next UOW
 
 ---
 
@@ -102,4 +102,76 @@
       reading the backlog snapshot, not after, to close a window where concurrently-produced
       blocks could be silently dropped for a given connection. Doc update, journal entry, &
       UOW-08 closure.
+
+### [x] UOW-09 - AgentZ Cookbook Presets, Spectator Mode & SDK Bible Consolidation
+- [x] Task 9.1 - Consolidated `.codex/AGENTZ-STUDIO-SDK.md` into the full "AgentZ Bible": added
+      the Top-Level Platform Layout diagram, Governance & System Ceilings Matrix, Merkle Hash
+      Chain Flow diagram, Single-Active Builder & Spectator Lock Flow diagram, Scenario 3 (B2B
+      Lead Scoring Bot), and an AgentZ Cookbook & Session Replay section — with explicit notes on
+      where the implementation trims scope against the aspirational layout diagram (no Command
+      Drawer / in-app Bible viewer built).
+- [x] Task 9.2 - **Full single-active-builder unification (architect-directed)**: refactored
+      `agentStream.ts`'s per-request pipeline into one server-wide execution via a new
+      `src/server/services/sessionManager.ts` — the first connection claims the builder role and
+      actually runs the Planner→Architect→Lead Dev→Reviewer simulation; every other connection
+      (a second tab, a Cookbook launch mid-build, a Terminal `run`) becomes a spectator of that
+      same run via `broadcastFrame`/`subscribe`, never starting a parallel pipeline.
+- [x] Task 9.3 - `src/server/routes/spectatorStream.ts` (`GET /api/agent/spectate`) — always
+      spectates, never claims builder; `SwarmCanvas`/`swarmStore.ts` now connect here instead of
+      `/api/agent/stream`, so pure visualization can never accidentally win the builder race with
+      no prompt attached (which would have silently broken `AppPreview`'s ACME Order boot demo).
+- [x] Task 9.4 - `src/lib/cookbookPresets.ts` (3 flagship presets) + `src/components/
+      CookbookDropdown.tsx` (header dropdown: one-click preset launch + saved-run instant replay)
+      + `src/lib/sessionRoleStore.ts` (drives the header's `🟢 ACTIVE BUILDER` / `👀 SPECTATOR
+      MODE` badge). `sandboxStore.ts` gained a shared singleton export so the header dropdown and
+      `AppPreview` can trigger/observe the same generation.
+- [x] Task 9.5 - `src/server/services/sessionSerializer.ts` + `GET /api/sessions` /
+      `GET /api/sessions/:id` — completed builds are serialized to `.codex/demos/[session-id].json`
+      once the *entire* pipeline finishes (not right after code generation — an earlier version
+      captured the audit slice too early and silently missed the Reviewer stage; fixed by tagging
+      every audit event with its owning `sessionId` and filtering on that instead of a timing-
+      based index range, which also stays correct when a new build starts immediately after).
+- [x] Task 9.6 - Added the B2B Lead Scoring Bot scenario to `appGeneratorPrompt.ts` (weighted
+      threshold rules + a simulated outbound webhook alert). Extended `verify-agent-stream.ts`
+      with a dedicated spectator-mode test (builder + 2 concurrent spectators mirror the exact
+      same `agent_step` sequence; lock releases correctly after completion). Doc update, journal
+      entry, & UOW-09 closure.
+
+### [x] UOW-10 - Command Center Drawer, Navigation Polish & AgentZ Bible Viewer
+- [x] Task 10.1 - Built `src/components/CommandCenterDrawer.tsx` — replaces the old inline
+      Robert/Streaming/Grid header links with a `☰ Command Center` toggle (top-left, next to the
+      brand mark) that slides in a left-side drawer with rich cards (icon, description, hover
+      state) for NemZilla Studio (marked "Current"), Robert Nemzek, StreamZilla, and GridZilla.
+- [x] Task 10.2 - Built `src/components/BibleModal.tsx` + `src/lib/markdown.ts` + a new
+      `GET /api/bible` route (`src/server/routes/bible.ts`) reading `.codex/AGENTZ-STUDIO-SDK.md`
+      fresh off disk per request (not a build-time bundle — the doc keeps changing UOW over UOW,
+      and a static import would show stale content in a running prod server until redeploy).
+      `markdown.ts` is a small hand-rolled parser (headings, code fences, bold/inline-code/links,
+      lists, GFM tables, hr) rather than a new dependency, consistent with this project's
+      no-new-runtime-deps track record.
+- [x] Task 10.3 - Restructured `EcosystemNav.tsx`'s header: brand + Command Center on the left;
+      `📖 AgentZ Bible`, `Preset Cookbook ▾`, and the builder/spectator badge on the right, with
+      `hidden sm:inline` text labels (icon-only below the `sm` breakpoint) and `flex-wrap` so
+      nothing clips. Verified via Playwright at 375px (mobile), 768px (tablet), and 1500px
+      (desktop) — zero horizontal overflow at any width, zero console errors.
+- [x] Task 10.4 - `npx tsc -b` clean, `npm run build` clean, `npm run test:sse` unaffected. Real
+      `NODE_ENV=production` boot confirms `/api/bible` serves correctly. Doc update, journal
+      entry, & UOW-10 closure.
+- [x] Task 10.5 (add-on) - "Save to Cookbook" recipe archiving: `SaveRecipeModal.tsx` (Recipe
+      Name / Description / Category Tag form) appears in `AppPreview.tsx`'s header once a build
+      is `ready`; `src/lib/recipeStore.ts` persists to `localStorage` (source of truth for
+      display) and archives via `POST /api/sessions/save-recipe` →
+      `.codex/demos/custom-[recipe-id].json` (`src/server/services/recipeSerializer.ts`, server-
+      side validated: id/category whitelisted, name/description/code length-capped).
+      `sessionSerializer.ts`'s `listSavedSessions()` now skips `custom-*.json` so the dropdown's
+      two sections ("AgentZ Cookbook (saved runs)" vs "⭐ My Saved Recipes") stay distinct.
+      `CookbookDropdown.tsx` renders the new section from `recipeState` for instant replay.
+- [x] Task 10.6 (add-on) - Audited `.codex/AGENTZ-STUDIO-SDK.md` for all 5 requested diagrams
+      (Top-Level Platform Layout §8, Dual-Engine Architecture, Governance Matrix §9, Merkle Chain
+      §10, Single-Active Builder Lock §11) — all present. Removed an accidental duplicate copy of
+      the Dual-Engine diagram (pre-existing since before UOW-06), corrected section 8's stale note
+      claiming the Command Drawer/Bible viewer weren't built (they were, in this same UOW), and
+      added section 13 documenting `CommandCenterDrawer.tsx`/`BibleModal.tsx`. `tsc -b`/`build`/
+      `test:sse` clean after the add-ons; production boot confirmed `POST /api/sessions/save-recipe`
+      validates (400 on bad input, 200 + correct file on valid input).
 

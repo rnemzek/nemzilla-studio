@@ -11,6 +11,7 @@ export interface AuditBlock {
   policyStatus: PolicyStatus
   prevHash: string
   hash: string
+  sessionId?: string
 }
 
 export interface AuditState {

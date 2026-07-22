@@ -3,6 +3,9 @@ import { agentStreamHandler } from './services/agentStream.ts'
 import { auditStreamHandler } from './services/auditLedger.ts'
 import { securityHeaders } from './middleware/securityHeaders.ts'
 import { sandboxFrameHandler } from './routes/sandboxFrame.ts'
+import { spectatorStreamHandler } from './routes/spectatorStream.ts'
+import { getSessionHandler, listSessionsHandler, saveRecipeHandler } from './routes/sessions.ts'
+import { getBibleHandler } from './routes/bible.ts'
 
 const app = new Hono()
   .use('*', securityHeaders())
@@ -14,7 +17,12 @@ const app = new Hono()
     }),
   )
   .get('/api/agent/stream', (c) => agentStreamHandler(c))
+  .get('/api/agent/spectate', (c) => spectatorStreamHandler(c))
   .get('/api/audit/stream', (c) => auditStreamHandler(c))
+  .get('/api/sessions', (c) => listSessionsHandler(c))
+  .get('/api/sessions/:id', (c) => getSessionHandler(c))
+  .post('/api/sessions/save-recipe', (c) => saveRecipeHandler(c))
+  .get('/api/bible', (c) => getBibleHandler(c))
   // Path must match SANDBOX_FRAME_PATH in src/lib/sandboxTemplate.ts and the
   // exemption in securityHeaders.ts.
   .get('/sandbox-frame', sandboxFrameHandler)

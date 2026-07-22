@@ -7,7 +7,14 @@ const BASE_URL = `http://127.0.0.1:${PORT}`
 const HEALTH_URL = `${BASE_URL}/api/health`
 const STREAM_URL = `${BASE_URL}/api/agent/stream`
 
-const ALLOWED_EVENTS = new Set(['agent_step', 'token_stream', 'metric_tick', 'system_alert'])
+const ALLOWED_EVENTS = new Set([
+  'session_role',
+  'session_ended',
+  'agent_step',
+  'token_stream',
+  'metric_tick',
+  'system_alert',
+])
 const ALLOWED_EVENTS_WITH_PROMPT = new Set([...ALLOWED_EVENTS, 'generated_app_payload'])
 const EXPECTED_AGENTS = ['Planner', 'Architect', 'Lead Dev', 'Reviewer']
 
@@ -69,8 +76,10 @@ async function testFullPipeline() {
     assert(ALLOWED_EVENTS.has(frame.event), `unexpected event type "${frame.event}"`)
   }
 
-  assert(frames[0]!.event === 'system_alert', 'first frame should be a system_alert')
-  assert(frames.at(-1)!.event === 'system_alert', 'last frame should be a system_alert')
+  assert(frames[0]!.event === 'session_role', 'first frame should be session_role')
+  assert((frames[0]!.data as { role: string }).role === 'builder', 'first (only) connection should claim the builder role')
+  assert(frames[1]!.event === 'system_alert', 'second frame should be a system_alert')
+  assert(frames.at(-1)!.event === 'session_ended', 'last frame should be session_ended once the build completes')
 
   const ids = frames.map((f) => Number(f.id))
   for (let i = 1; i < ids.length; i++) {
@@ -139,6 +148,81 @@ async function testAppGenerationPrompt() {
   console.log(`   ok: ${payloadFrames.length} generated_app_payload frames, final chunk matched scenario "acme-order"`)
 }
 
+async function testSpectatorMode() {
+  console.log('-> starting a build and confirming concurrent connections spectate it...')
+
+  const builderPromise = readFullStream()
+
+  // Give the builder a moment to actually claim the role before the
+  // spectators connect, so we're testing "joins mid-build", not "joins the race".
+  await delay(50)
+
+  const [spectatorViaStreamRaw, spectatorViaSpectateRaw] = await Promise.all([
+    readFullStream(),
+    (async () => {
+      const res = await fetch(`${BASE_URL}/api/agent/spectate`)
+      assert(res.ok, `expected 200 from /api/agent/spectate, got ${res.status}`)
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let raw = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        raw += decoder.decode(value, { stream: true })
+      }
+      return raw
+    })(),
+  ])
+
+  const builderRaw = await builderPromise
+  const builderFrames = parseFrames(builderRaw)
+  const spectatorStreamFrames = parseFrames(spectatorViaStreamRaw)
+  const spectatorSpectateFrames = parseFrames(spectatorViaSpectateRaw)
+
+  assert((builderFrames[0]!.data as { role: string }).role === 'builder', 'first connection should be the builder')
+  assert(
+    (spectatorStreamFrames[0]!.data as { role: string }).role === 'spectator',
+    'a second concurrent /api/agent/stream connection should spectate, not start its own build',
+  )
+  assert(
+    (spectatorSpectateFrames[0]!.data as { role: string }).role === 'spectator',
+    '/api/agent/spectate should always spectate',
+  )
+
+  // Both spectators should observe the same run: same set of agent_step transitions.
+  const describe = (frames: SseFrame[]) =>
+    frames
+      .filter((f) => f.event === 'agent_step')
+      .map((f) => JSON.stringify(f.data))
+      .join('|')
+  assert(
+    describe(builderFrames) === describe(spectatorStreamFrames),
+    'spectator (via /stream) should mirror the exact same agent_step sequence as the builder',
+  )
+  assert(
+    describe(builderFrames) === describe(spectatorSpectateFrames),
+    'spectator (via /spectate) should mirror the exact same agent_step sequence as the builder',
+  )
+
+  // Every connection should see the run close out the same way.
+  for (const frames of [builderFrames, spectatorStreamFrames, spectatorSpectateFrames]) {
+    assert(frames.at(-1)!.event === 'session_ended', 'every connection should end with session_ended')
+  }
+
+  // Lock must be released: the next fresh connection becomes a new builder.
+  const freshRes = await fetch(STREAM_URL)
+  const freshReader = freshRes.body!.getReader()
+  const { value } = await freshReader.read()
+  const [firstFrame] = parseFrames(new TextDecoder().decode(value))
+  assert(firstFrame?.event === 'session_role', 'expected session_role as the first frame of a fresh connection')
+  assert((firstFrame.data as { role: string }).role === 'builder', 'lock should be released after the build ends')
+  await freshReader.cancel().catch(() => {})
+
+  console.log(
+    `   ok: builder + 2 concurrent spectators (via /stream and /spectate) all mirrored ${describe(builderFrames).split('|').length} agent_step events identically, lock released after completion`,
+  )
+}
+
 async function testAbortDoesNotLeak() {
   console.log('-> aborting stream mid-flight and checking the server stays healthy...')
   const controller = new AbortController()
@@ -175,7 +259,7 @@ async function testAbortDoesNotLeak() {
   const elapsedMs = Date.now() - start
   const frames2 = parseFrames(raw2)
   assert(
-    frames2.at(-1)!.event === 'system_alert',
+    frames2.at(-1)!.event === 'session_ended',
     'pipeline should still complete cleanly after concurrent aborts',
   )
   console.log(`   ok: fresh pipeline still completes cleanly in ${elapsedMs}ms after 5 concurrent aborts`)
@@ -217,6 +301,7 @@ async function main() {
     await waitForHealthy()
     await testFullPipeline()
     await testAppGenerationPrompt()
+    await testSpectatorMode()
     await testAbortDoesNotLeak()
     console.log('\nAll agent stream checks passed.')
   } catch (err) {

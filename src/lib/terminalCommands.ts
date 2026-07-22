@@ -73,6 +73,11 @@ async function streamPipeline(ctx: CommandContext, task: string, verbose: boolea
       buffer = buffer.slice(boundary + 2)
 
       switch (event) {
+        case 'session_role':
+          if (data.role === 'spectator') {
+            ctx.print('⚠ a build is already active — spectating the current run instead of starting a new one', 'system')
+          }
+          break
         case 'token_stream':
           if (verbose) tokenBuffer += String(data.token)
           break

@@ -1,35 +1,38 @@
-import { For } from 'solid-js'
+import { Show } from 'solid-js'
+import CommandCenterDrawer from './CommandCenterDrawer.tsx'
+import BibleModal from './BibleModal.tsx'
+import CookbookDropdown from './CookbookDropdown.tsx'
+import { currentRoleBadge } from '../lib/sessionRoleStore.ts'
 
-interface EcosystemLink {
-  label: string
-  href: string
+const ROLE_BADGE_LABEL: Record<'builder' | 'spectator', string> = {
+  builder: '🟢 ACTIVE BUILDER',
+  spectator: '👀 SPECTATOR MODE',
 }
 
-const ECOSYSTEM_LINKS: EcosystemLink[] = [
-  { label: 'Robert', href: 'https://robert.nemzilla.net' },
-  { label: 'Streaming', href: 'https://streaming.nemzilla.net' },
-  { label: 'Grid', href: 'https://grid.nemzilla.net' },
-]
+const ROLE_BADGE_CLASS: Record<'builder' | 'spectator', string> = {
+  builder: 'border-emerald-500/40 text-emerald-400',
+  spectator: 'border-border text-text-muted',
+}
 
 function EcosystemNav() {
   return (
-    <header class="flex w-full items-center justify-between border-b border-border bg-surface px-6 py-3">
-      <span class="font-mono text-sm tracking-wide text-text">
-        NemZilla<span class="text-accent">.</span>net
-      </span>
-      <nav aria-label="Ecosystem quick-launch" class="flex items-center gap-2">
-        <For each={ECOSYSTEM_LINKS}>
-          {(link) => (
-            <a
-              href={link.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="rounded-md border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-muted transition-colors hover:border-accent hover:text-text"
-            >
-              {link.label}
-            </a>
+    <header class="flex w-full flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3 sm:px-6">
+      <div class="flex items-center gap-2">
+        <span class="font-mono text-sm tracking-wide text-text">
+          NemZilla<span class="text-accent">.</span>net
+        </span>
+        <CommandCenterDrawer />
+      </div>
+      <nav aria-label="Studio controls" class="flex flex-wrap items-center gap-2">
+        <BibleModal />
+        <CookbookDropdown />
+        <Show when={currentRoleBadge()}>
+          {(role) => (
+            <span class={`rounded-md border px-2 py-1.5 font-mono text-[11px] sm:px-3 sm:text-xs ${ROLE_BADGE_CLASS[role()]}`}>
+              {ROLE_BADGE_LABEL[role()]}
+            </span>
           )}
-        </For>
+        </Show>
       </nav>
     </header>
   )

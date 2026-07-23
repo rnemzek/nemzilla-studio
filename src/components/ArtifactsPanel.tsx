@@ -148,7 +148,7 @@ export default function ArtifactsPanel() {
 
       <div class="flex-1 overflow-y-auto px-3 py-2 font-mono text-xs">
         <Show when={tab() === 'transcript'}>
-          <For each={transcript()} fallback={<p class="text-text-muted">No discovery transcript yet — type "build" in the terminal to start one.</p>}>
+          <For each={transcript()} fallback={<p class="text-text-muted">No discovery transcript yet — tell AgentZ what you want to build to start one.</p>}>
             {(entry) => (
               <p class="mb-2 whitespace-pre-wrap">
                 <span class={`font-semibold ${entry.role === 'po' ? 'text-accent' : 'text-text'}`}>

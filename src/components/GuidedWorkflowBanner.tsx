@@ -3,7 +3,7 @@ import { For, Show, createSignal } from 'solid-js'
 const STORAGE_KEY = 'nemzilla-studio:guided-banner-collapsed'
 
 const STEPS = [
-  { icon: '💬', text: 'Tell the AI PO what to build, in plain English, in the terminal below.' },
+  { icon: '💬', text: 'Tell AgentZ what to build, in plain English, in the box below.' },
   { icon: '🐝', text: 'Watch the Swarm Canvas above animate every agent as it plans, builds, and reviews.' },
   { icon: '📱', text: 'See your generated app come alive in App Preview, ready to click through.' },
 ]

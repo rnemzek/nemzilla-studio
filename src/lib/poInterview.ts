@@ -9,6 +9,7 @@
  */
 
 import { getVisitor } from './visitorStore.ts'
+import { activeTemplateId } from './templateStore.ts'
 
 export interface PoTranscriptEntry {
   role: 'po' | 'user'
@@ -71,11 +72,22 @@ async function callInterviewApi(
     // Pass C: correlates this interview to a visitor (visitorStore.ts) and
     // lets the server audit-log the turn under this interview's own
     // sessionId — powers the Admin Drawer's Session Detail view.
+    // Pass E: also sends the active domain template id (templateStore.ts) so
+    // the server can layer that domain's systemPromptOverlay onto the base
+    // discovery prompt for this turn (poInterviewLLM.ts).
     const visitor = getVisitor()
     const res = await fetch(`${window.location.origin}/api/po/interview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript, known, userMessage, sessionId, visitorId: visitor.visitorId, handle: visitor.handle }),
+      body: JSON.stringify({
+        transcript,
+        known,
+        userMessage,
+        sessionId,
+        visitorId: visitor.visitorId,
+        handle: visitor.handle,
+        templateId: activeTemplateId(),
+      }),
     })
     if (!res.ok) {
       // The server tags each failure category distinctly (e.g. "llm_not_configured"

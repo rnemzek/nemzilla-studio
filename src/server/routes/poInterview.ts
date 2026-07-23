@@ -4,6 +4,7 @@ import { classifyAnthropicError, type LlmErrorCategory } from '../services/anthr
 import { isValidSessionId } from '../services/sessionBundleRecorder.ts'
 import { isValidVisitorId, sanitizeHandle, touchVisitor, linkPipelineSession, addMilestone } from '../services/visitorTracker.ts'
 import { enqueueAuditEvent } from '../services/auditLedger.ts'
+import { getTemplate } from '../../config/templateRegistry.ts'
 
 /** Maps each diagnosed failure category to the HTTP status returned to the client — distinct enough to tell "not configured" (503, an operator problem) apart from a transient upstream failure (502, might work on retry) from the browser's network tab alone. */
 const STATUS_BY_CATEGORY = {
@@ -85,13 +86,14 @@ export async function poInterviewHandler(c: Context) {
     return c.json({ error: 'invalid JSON body' }, 400)
   }
 
-  const { transcript, known, userMessage, sessionId, visitorId, handle } = (body ?? {}) as {
+  const { transcript, known, userMessage, sessionId, visitorId, handle, templateId } = (body ?? {}) as {
     transcript?: unknown
     known?: unknown
     userMessage?: unknown
     sessionId?: unknown
     visitorId?: unknown
     handle?: unknown
+    templateId?: unknown
   }
 
   if (!isValidTranscript(transcript) || transcript.length > MAX_TRANSCRIPT_LENGTH) {
@@ -105,7 +107,11 @@ export async function poInterviewHandler(c: Context) {
   }
 
   try {
-    const result = await runPoInterviewTurn(transcript, known, typeof userMessage === 'string' ? userMessage : null)
+    // Pass E: an unrecognized/omitted templateId just means no overlay is
+    // applied — the base discovery prompt still works standalone, so an old
+    // client or a bad id degrades gracefully rather than erroring.
+    const templateOverlay = typeof templateId === 'string' ? (getTemplate(templateId)?.systemPromptOverlay ?? undefined) : undefined
+    const result = await runPoInterviewTurn(transcript, known, typeof userMessage === 'string' ? userMessage : null, templateOverlay)
 
     // Pass C: correlates this interview to a visitor and audit-logs the turn
     // in real time (tagged by the interview's own sessionId, the same field

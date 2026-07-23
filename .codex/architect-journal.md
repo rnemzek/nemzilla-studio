@@ -752,6 +752,34 @@
   (already root-caused in UOW-15).
 - **UOW-16 complete.** All 3 Pass D requirement areas shipped.
 
+### UOW-17 Sync — Pass E Kickstart: Multi-Agent Swarm Catalog (templateRegistry.ts & Domain Switcher) — 2026-07-23
+- **Template Registry:** new `src/config/templateRegistry.ts` (shared client/server, `actionKit.ts`-
+  style tsconfig sharing) — a `DomainTemplate` registry of 3 domains: `order-entry` (maps to the
+  existing `acme-order` scenario), `wfd` (What's For Dinner — no dedicated generator yet, honestly
+  flagged), `itinerary` (maps to the existing `today-itinerary` scenario). `templateStore.ts` holds
+  the active id as a plain signal.
+- **`/template` slash command:** lists or switches the active domain, in the same palette every
+  other slash command already uses.
+- **Dynamic re-hydration without fake telemetry:** Swarm Canvas shows the active template's own
+  persona nodes/colors as an idle preview, but a new `runGeneration` counter on `swarmStore.ts`
+  hands control back to the real pipeline's real agent names the instant a genuine run starts —
+  the template layer is a pre-run preview, never a stand-in for real execution. App Preview shows
+  the active domain + an on-demand "Preview this domain" button where a real generator exists. The
+  AI PO's system prompt now layers the active template's overlay onto the base discovery prompt,
+  reframing vocabulary without forking the underlying extraction schema three ways.
+- **Branding guardrails:** "AgentZ CLI" → "AgentZ", `$` → `>`/`✨`, remaining "terminal" mentions
+  scrubbed project-wide.
+- **Real bug found and fixed:** the slash palette's Enter key required a second press to actually
+  submit a fully-typed command (it always re-completed the suggestion instead of submitting on an
+  exact match) — fixed in `Terminal.tsx`.
+- **Documentation note:** found and completed an incomplete, dangling draft stub already sitting in
+  `AGENTZ-STUDIO-SDK.md` for this exact feature (inaccurately referenced `React.ComponentType` in
+  this SolidJS project) rather than silently deleting or leaving it broken.
+- **Verification:** `tsc --noEmit`/`tsc -b`/`build`/`test:sse` all clean. Full production-mode
+  Playwright pass confirmed every directive end to end, including a real LLM turn under the `wfd`
+  overlay producing genuinely dinner-flavored PO phrasing — not just wiring that compiles.
+- **UOW-17 complete.** All 4 Pass E kickstart directives shipped, plus the palette bug fix.
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

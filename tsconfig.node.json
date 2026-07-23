@@ -19,5 +19,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "server.ts", "src/server", "scripts", "src/lib/actionKit.ts"]
+  "include": ["vite.config.ts", "server.ts", "src/server", "scripts", "src/lib/actionKit.ts", "src/config/templateRegistry.ts"]
 }

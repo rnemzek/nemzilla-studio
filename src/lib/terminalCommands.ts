@@ -7,6 +7,7 @@ import { openAdminDrawer } from './adminDrawerStore.ts'
 import { auditStore } from './auditStore.ts'
 import { startReplay, stopReplay } from './replayStore.ts'
 import type { SavedRunCatalog, SavedRunPolicyRules } from './runHistoryStore.ts'
+import { TEMPLATE_REGISTRY, getActiveTemplate, setActiveTemplate } from './templateStore.ts'
 
 export type OutputKind = 'input' | 'output' | 'error' | 'system' | 'po'
 
@@ -31,13 +32,14 @@ export const SLASH_COMMANDS: SlashCommandInfo[] = [
   { name: 'build', usage: '/build', description: 'Start (or restart) the AI PO discovery interview.' },
   { name: 'andiamo', usage: '/andiamo', description: 'Launch the swarm build from a completed interview.' },
   { name: 'replay', usage: '/replay', description: 'Replay the current session step-by-step on the Swarm Canvas.' },
-  { name: 'reset', usage: '/reset', description: 'Cancel any active interview and clear the terminal.' },
+  { name: 'reset', usage: '/reset', description: 'Cancel any active interview and start fresh.' },
   { name: 'run', usage: '/run [task]', description: 'Stream the full agent pipeline, verbose.' },
   { name: 'triad', usage: '/triad [task]', description: 'Condensed agent pipeline status pass.' },
   { name: 'metrics', usage: '/metrics', description: 'Query /api/health for live status and latency.' },
   { name: 'launch', usage: '/launch [target]', description: 'Open an ecosystem link (robert, streaming, grid).' },
   { name: 'admin', usage: '/admin', description: 'Open the Usage & Session Drawer.' },
-  { name: 'clear', usage: '/clear', description: 'Clear the terminal output.' },
+  { name: 'template', usage: '/template [id]', description: 'List or switch the active domain swarm.' },
+  { name: 'clear', usage: '/clear', description: 'Clear the conversation log.' },
   { name: 'help', usage: '/help', description: 'Show this list of commands.' },
 ]
 
@@ -319,6 +321,37 @@ function runReplay(ctx: CommandContext): void {
   ctx.print('Replay started — see the Step X of Y scrubber on the Swarm Canvas above.', 'system')
 }
 
+/**
+ * Pass E: `/template` — lists or switches the active domain swarm
+ * (templateRegistry.ts). Switching updates a shared signal
+ * (templateStore.ts) that SwarmCanvas.tsx (idle node personas),
+ * AppPreview.tsx (the domain indicator + "preview this domain" routing),
+ * and the AI PO's next turn (its system-prompt overlay, sent from
+ * poInterview.ts) all read reactively — nothing else needs to be told
+ * directly.
+ */
+function runTemplate(ctx: CommandContext, args: string[]): void {
+  const requestedId = args[0]?.toLowerCase()
+
+  if (!requestedId) {
+    ctx.print('Available domain swarms:', 'output')
+    for (const template of TEMPLATE_REGISTRY) {
+      const marker = template.id === getActiveTemplate().id ? '→' : ' '
+      ctx.print(`  ${marker} ${template.id.padEnd(12)}${template.name} — ${template.description}`, 'output')
+    }
+    ctx.print('Usage: /template <id>', 'output')
+    return
+  }
+
+  const template = setActiveTemplate(requestedId)
+  if (!template) {
+    ctx.print(`unknown domain "${requestedId}" (try: ${TEMPLATE_REGISTRY.map((t) => t.id).join(', ')})`, 'error')
+    return
+  }
+
+  ctx.print(`Switched to "${template.name}" — Swarm Canvas and the AI PO will reflect this domain now.`, 'system')
+}
+
 /** Pass D: `/reset` — cancels any active interview, exits Replay Mode if active, and clears the terminal for a fresh start. */
 function runReset(ctx: CommandContext): void {
   activeInterview = null
@@ -368,6 +401,9 @@ async function runSlashCommand(ctx: CommandContext, rawInput: string): Promise<v
       break
     case 'replay':
       runReplay(ctx)
+      break
+    case 'template':
+      runTemplate(ctx, args)
       break
     case 'reset':
       runReset(ctx)

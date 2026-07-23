@@ -28,6 +28,8 @@ export interface SwarmState {
   edges: Record<string, boolean>
   connected: boolean
   message: string | null
+  /** Pass E: bumped every time a fresh run genuinely begins (a RUN_START_AGENTS EXECUTING). Lets SwarmCanvas.tsx detect "a real run just started" without diffing stageOrder itself, to know when to stop showing the active domain template's idle preview nodes. */
+  runGeneration: number
 }
 
 /** Idle placeholder shown before any run has ever started on this connection. */
@@ -59,7 +61,7 @@ function createInitialState(): SwarmState {
     edges[edgeKey(DEFAULT_STAGE_ORDER[i]!, DEFAULT_STAGE_ORDER[i + 1]!)] = false
   }
 
-  return { stageOrder: [...DEFAULT_STAGE_ORDER], agents, edges, connected: false, message: null }
+  return { stageOrder: [...DEFAULT_STAGE_ORDER], agents, edges, connected: false, message: null, runGeneration: 0 }
 }
 
 /** A true clean slate (no placeholder nodes) — used when a new run actually starts. */
@@ -67,6 +69,7 @@ function resetForNewRun(draft: SwarmState): void {
   draft.stageOrder = []
   draft.agents = {}
   draft.edges = {}
+  draft.runGeneration += 1
 }
 
 /** Adds `name` to the run if this is the first time it's been seen, wiring the incoming edge from whatever the previous stage was. */
@@ -119,7 +122,7 @@ export interface ReplaySwarmSnapshot {
  * agent was last active.
  */
 export function buildReplaySnapshot(steps: AuditBlock[], uptoIndex: number): ReplaySwarmSnapshot {
-  const draft: SwarmState = { stageOrder: [], agents: {}, edges: {}, connected: false, message: null }
+  const draft: SwarmState = { stageOrder: [], agents: {}, edges: {}, connected: false, message: null, runGeneration: 0 }
   let focusAgent: AgentName | null = null
   let packetEdge: { source: AgentName; target: AgentName } | null = null
 

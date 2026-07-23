@@ -1,7 +1,8 @@
-import { For, Show, onCleanup, onMount } from 'solid-js'
+import { For, Show, createMemo, onCleanup, onMount } from 'solid-js'
 import { sandboxStore, type PreviewTab } from '../lib/sandboxStore.ts'
 import { SANDBOX_FRAME_PATH } from '../lib/sandboxTemplate.ts'
 import { policyTrajectoryState, TRAJECTORY_STAGES, decisionLabel } from '../lib/policyTrajectoryStore.ts'
+import { activeTemplateId, getActiveTemplate } from '../lib/templateStore.ts'
 import SaveRecipeModal from './SaveRecipeModal.tsx'
 import ArtifactsPanel from './ArtifactsPanel.tsx'
 
@@ -33,6 +34,31 @@ export default function AppPreview() {
     onCleanup(disconnect)
   })
 
+  /**
+   * Pass E: "prepares view routing for the active domain's preview UI" —
+   * `/template <id>` (terminalCommands.ts) never force-relaunches the
+   * current preview on its own (that would yank the demo out from under
+   * anyone mid-interaction), but this button lets a visitor explicitly ask
+   * to see the active domain's own generator output. Two of three templates
+   * already have a real one (`previewScenario` in templateRegistry.ts);
+   * the third ("What's For Dinner") is honestly labeled "coming soon"
+   * rather than silently routing through the unrelated generic
+   * default-sandbox card under a misleading domain name.
+   */
+  const activeTemplate = createMemo(() => {
+    activeTemplateId()
+    return getActiveTemplate()
+  })
+
+  function previewActiveDomain() {
+    const template = activeTemplate()
+    if (!template.previewScenario) return
+    // Fire-and-forget, matching CookbookDropdown.tsx's established pattern
+    // for a one-shot triggered build — the SSE connection closes itself
+    // when the stream ends, so there's nothing to track/clean up here.
+    sandbox.connectGenerator(template.previewPrompt)
+  }
+
   return (
     <section
       data-testid="app-preview"
@@ -62,6 +88,24 @@ export default function AppPreview() {
           </Show>
           <span class="shrink-0 whitespace-nowrap font-mono text-xs text-text-muted">{STATUS_LABEL[sandbox.state.status]}</span>
         </div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-1.5 text-[11px]">
+        <span class="text-text-muted">
+          Domain: <span class="font-medium text-text">{activeTemplate().name}</span>
+        </span>
+        <Show
+          when={activeTemplate().previewScenario}
+          fallback={<span class="text-text-muted italic">Preview coming soon for this domain</span>}
+        >
+          <button
+            type="button"
+            class="rounded border border-accent/40 px-2 py-0.5 text-accent transition-colors hover:bg-accent/10"
+            onClick={previewActiveDomain}
+          >
+            🎯 Preview this domain
+          </button>
+        </Show>
       </div>
 
       <Show when={sandbox.state.tab === 'preview' && policyTrajectoryState.active}>

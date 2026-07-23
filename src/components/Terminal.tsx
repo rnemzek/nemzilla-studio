@@ -86,7 +86,7 @@ export default function Terminal() {
   const runValue = async (value: string) => {
     if (!value.trim() || isRunning()) return
 
-    print(`$ ${value}`, 'input')
+    print(`> ${value}`, 'input')
     setIsRunning(true)
     try {
       await runCommand(value, { print, clear })
@@ -131,10 +131,22 @@ export default function Terminal() {
         setPaletteIndex((i) => (i - 1 + filteredCommands().length) % filteredCommands().length)
         return
       }
-      if (event.key === 'Enter' || event.key === 'Tab') {
+      if (event.key === 'Tab') {
         event.preventDefault()
         selectPaletteCommand(filteredCommands()[paletteIndex()]!)
         return
+      }
+      if (event.key === 'Enter') {
+        const match = filteredCommands()[paletteIndex()]!
+        // Already typed the complete command name (e.g. "/template") — let
+        // this Enter submit normally (falls through below) instead of
+        // re-completing it into the input again, which would otherwise
+        // require a second Enter press to actually run anything.
+        if (input().slice(1).toLowerCase() !== match.name) {
+          event.preventDefault()
+          selectPaletteCommand(match)
+          return
+        }
       }
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -209,8 +221,8 @@ export default function Terminal() {
         />
         <button
           type="button"
-          aria-label={minimized() ? 'Restore terminal' : 'Minimize terminal'}
-          title={minimized() ? 'Restore terminal' : 'Minimize terminal'}
+          aria-label={minimized() ? 'Restore AgentZ' : 'Minimize AgentZ'}
+          title={minimized() ? 'Restore AgentZ' : 'Minimize AgentZ'}
           class="h-2.5 w-2.5 rounded-full bg-yellow-500/70 transition-colors hover:bg-yellow-500"
           onClick={(event) => {
             event.stopPropagation()
@@ -219,15 +231,15 @@ export default function Terminal() {
         />
         <button
           type="button"
-          aria-label={expanded() ? 'Collapse terminal' : 'Expand terminal'}
-          title={expanded() ? 'Collapse terminal' : 'Expand terminal'}
+          aria-label={expanded() ? 'Collapse AgentZ' : 'Expand AgentZ'}
+          title={expanded() ? 'Collapse AgentZ' : 'Expand AgentZ'}
           class="h-2.5 w-2.5 rounded-full bg-green-500/70 transition-colors hover:bg-green-500"
           onClick={(event) => {
             event.stopPropagation()
             setExpanded((v) => !v)
           }}
         />
-        <span class="ml-2">AgentZ CLI</span>
+        <span class="ml-2">AgentZ</span>
       </div>
 
       <Show when={!minimized()}>
@@ -295,7 +307,7 @@ export default function Terminal() {
             </div>
           </Show>
 
-          <span class="mt-0.5 text-accent">$</span>
+          <span class="mt-0.5 text-accent" aria-hidden="true">✨</span>
           <textarea
             ref={inputRef}
             rows={1}

@@ -353,3 +353,59 @@ calls `claimSession()`, so a pure-visualization consumer can never accidentally 
   `markdown.ts` is a small hand-rolled parser (headings, fenced code blocks, bold/inline-code/
   links, lists, GFM tables, hr) covering exactly the syntax this doc uses — not a general-purpose
   CommonMark implementation, and deliberately not a new dependency.
+
+---
+
+## 14. Multi-Agent Swarm Catalog & Domain Templates (UOW-17)
+
+- **`src/config/templateRegistry.ts`:** the `DomainTemplate` registry — `id`, `name`, `description`,
+  `systemPromptOverlay`, `swarmNodes` (persona `agent`/`role`/`color`), and `previewScenario`/
+  `previewPrompt` (routes to an existing `matchScenario()` generator in `appGeneratorPrompt.ts`
+  where one already exists, `null` otherwise). Shared between the browser and the server tsconfig
+  projects the same way `actionKit.ts` already is (an explicit individual entry in
+  `tsconfig.node.json`'s `include`, not a duplicated file) — the AI PO's system prompt overlay is
+  applied server-side, but the same registry also drives the Swarm Canvas and App Preview client-side.
+  Three domains ship: `order-entry` (AI PO, Policy Auditor, Order Fulfillment Agent — maps to the
+  existing `acme-order` scenario), `wfd` — "What's For Dinner" (Sous-Chef Agent, Grocery Pantry
+  Agent, Media Linker Agent — no dedicated generator yet, honestly labeled "preview coming soon"
+  rather than silently falling through to the unrelated default-sandbox card), and `itinerary` —
+  Day Planner & Entertainment (Sports-Sync Agent, Movie-Stream Finder, Schedule Orchestrator — maps
+  to the existing `today-itinerary` scenario).
+- **`src/lib/templateStore.ts`:** the active template id, a plain module-level signal (same pattern
+  as `sessionRoleStore.ts`/`adminDrawerStore.ts`) — not persisted, since this is a per-session mode
+  rather than a durable identity.
+- **`/template` slash command** (`terminalCommands.ts`): `/template` alone lists all three domains;
+  `/template <id>` switches the active one. Reachable via the same slash-command palette every other
+  command uses (Pass D).
+- **Dynamic re-hydration, without fabricating fake telemetry:**
+  - **Swarm Canvas:** shows the active template's own personas (their own color per node, via a
+    static `PERSONA_STROKE_CLASS` lookup — Tailwind only keeps classes it can see as literal
+    strings in source, so this is never dynamically interpolated) as an idle preview whenever
+    nothing real is currently running. A new `runGeneration` counter on `SwarmState`
+    (`swarmStore.ts`) bumps every time a genuine pipeline run actually begins; the instant it does,
+    the canvas switches over to the real run's real agent names and stops showing the template
+    preview entirely — the template layer is honestly a *pre-run preview*, never a stand-in for
+    real execution data.
+  - **App Preview:** shows the active domain's name and, where a real generator exists
+    (`previewScenario` is set), a "🎯 Preview this domain" button that launches it on demand — never
+    automatically on template switch, since that would yank away whatever a visitor is already
+    looking at. `wfd` shows "Preview coming soon for this domain" instead.
+  - **AI PO system prompt:** `poInterview.ts` (client) sends the active template id on every turn;
+    `poInterviewHandler` (server) looks up its `systemPromptOverlay` and layers it onto
+    `poInterviewLLM.ts`'s base `SYSTEM_PROMPT` — reframing vocabulary (e.g. "vendor" becomes a
+    dinner event's name, "catalog" becomes recipe ingredients) without changing the underlying
+    vendorName/catalog/hitlThreshold extraction contract. A fully bespoke conversation flow (its own
+    structured-output schema per domain) is a larger follow-up than this kickstart's scope — flagged
+    here rather than silently claimed as done.
+- **Branding guardrail pass:** applied project-wide alongside this UOW — "AgentZ CLI" → "AgentZ" in
+  `Terminal.tsx`, the `$` shell-style prompt markers replaced with a clean `>` (echoed input history)
+  and `✨` (the live input row), and every other visible "terminal" mention
+  (`GuidedWorkflowBanner.tsx`, `ArtifactsPanel.tsx`'s empty-transcript fallback) reworded away from
+  CLI/terminal framing.
+- **Real bug found and fixed during verification:** the Pass D slash-command palette's Enter key
+  always re-completed the highlighted suggestion into the input, even when the input already
+  exactly matched a full command name (e.g. typing `/template` in full and pressing Enter just
+  re-filled `/template ` instead of running it) — needing a second Enter to actually submit. Fixed
+  in `Terminal.tsx`'s `handleKeyDown`: Enter now falls through to normal submit behavior once the
+  typed text is already an exact command match; Tab still always completes.
+

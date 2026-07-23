@@ -1,15 +1,9 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { createStore, produce, reconcile } from 'solid-js/store'
 import { createForceLayout, runLayoutSimulation, type SimLink } from '../lib/swarmLayout.ts'
-import {
-  createSwarmStore,
-  edgeKey,
-  buildReplaySnapshot,
-  DEFAULT_STAGE_ORDER,
-  type AgentName,
-  type AgentStatus,
-} from '../lib/swarmStore.ts'
+import { createSwarmStore, edgeKey, buildReplaySnapshot, type AgentName, type AgentStatus, type AgentState } from '../lib/swarmStore.ts'
 import { replayState, stopReplay, togglePlay, stepForward, stepBack, setSpeed } from '../lib/replayStore.ts'
+import { activeTemplateId, getActiveTemplate } from '../lib/templateStore.ts'
 import type { AuditBlock } from '../lib/auditStore.ts'
 import RnAvatar from './RnAvatar.tsx'
 
@@ -58,6 +52,27 @@ const STATUS_STROKE: Record<AgentStatus, string> = {
   error: 'stroke-red-400',
 }
 
+/**
+ * Pass E: literal Tailwind stroke classes for each domain template persona
+ * color (templateRegistry.ts). Deliberately a static Record rather than
+ * interpolating `stroke-${color}-400` at render time — Tailwind only keeps
+ * classes it can find as literal strings in source, so a dynamically built
+ * class name would be silently purged from the production build (the same
+ * lesson RnAvatar.tsx's gradient/glow classes already had to learn — see
+ * UOW-15's journal).
+ */
+const PERSONA_STROKE_CLASS: Record<string, string> = {
+  sky: 'stroke-sky-400',
+  amber: 'stroke-amber-400',
+  emerald: 'stroke-emerald-400',
+  orange: 'stroke-orange-400',
+  lime: 'stroke-lime-400',
+  fuchsia: 'stroke-fuchsia-400',
+  red: 'stroke-red-400',
+  violet: 'stroke-violet-400',
+  cyan: 'stroke-cyan-400',
+}
+
 // Tailwind arbitrary-value classes rather than inline `style` — production's
 // CSP (style-src 'self', no unsafe-inline) silently drops inline style
 // attributes, which is why this had never actually rendered in production.
@@ -99,14 +114,39 @@ export default function SwarmCanvas() {
 
   // Jittered off their anchors so the force simulation has visible work to
   // do settling back into place on first paint — matches the idle default
-  // canvas's look before any run has started.
-  const initialAnchors = computeAnchors(DEFAULT_STAGE_ORDER)
+  // canvas's look before any run has started. Seeded from the active
+  // template's own personas (Pass E) rather than a hardcoded classic list —
+  // the reactive layout effect below re-derives this the instant the real
+  // template signal is read anyway, so this is just a reasonable first paint.
+  const initialTemplateNodes = getActiveTemplate().swarmNodes.map((n) => n.agent)
+  const initialAnchors = computeAnchors(initialTemplateNodes)
   const initialPositions: Record<AgentName, { x: number; y: number }> = {}
-  for (const agent of DEFAULT_STAGE_ORDER) {
+  for (const agent of initialTemplateNodes) {
     const anchor = initialAnchors[agent]!
     initialPositions[agent] = { x: anchor.x + (Math.random() - 0.5) * 40, y: anchor.y + (Math.random() - 0.5) * 40 }
   }
   const [positions, setPositions] = createStore<Record<AgentName, { x: number; y: number }>>(initialPositions)
+
+  /**
+   * Pass E: the Multi-Agent Swarm Catalog's idle preview. Shows the active
+   * domain template's own personas (templateRegistry.ts) whenever nothing
+   * real is currently running — set true immediately on mount and every
+   * time `/template <id>` switches the active template, and cleared the
+   * instant a genuine pipeline run begins (`swarm.state.runGeneration`
+   * bumping means a real RUN_START_AGENTS EXECUTING event just landed).
+   * This never fabricates fake live telemetry — once a real run starts, the
+   * real agent names the server actually executed take over completely.
+   */
+  const [showTemplateIdle, setShowTemplateIdle] = createSignal(true)
+  createEffect(() => {
+    activeTemplateId()
+    setShowTemplateIdle(true)
+  })
+  createEffect((prevGeneration: number | undefined) => {
+    const gen = swarm.state.runGeneration
+    if (prevGeneration !== undefined && gen !== prevGeneration) setShowTemplateIdle(false)
+    return gen
+  })
 
   /**
    * Pass B: Replay Mode. `replayState` is a global singleton (replayStore.ts)
@@ -120,8 +160,21 @@ export default function SwarmCanvas() {
   const replaySnapshot = createMemo(() => (inReplay() ? buildReplaySnapshot(replayState.steps, replayState.stepIndex) : null))
   const view = createMemo(() => {
     const snap = replaySnapshot()
-    if (snap) return { stageOrder: snap.stageOrder, agents: snap.agents, edges: snap.edges }
-    return { stageOrder: swarm.state.stageOrder, agents: swarm.state.agents, edges: swarm.state.edges }
+    if (snap) return { stageOrder: snap.stageOrder, agents: snap.agents, edges: snap.edges, personas: null }
+
+    if (showTemplateIdle()) {
+      const template = getActiveTemplate()
+      const stageOrder = template.swarmNodes.map((n) => n.agent)
+      const agents: Record<AgentName, AgentState> = {}
+      const personas: Record<AgentName, { color: string; role: string }> = {}
+      for (const node of template.swarmNodes) {
+        agents[node.agent] = { status: 'idle', latencyMs: null, memoryMb: null }
+        personas[node.agent] = { color: node.color, role: node.role }
+      }
+      return { stageOrder, agents, edges: {} as Record<string, boolean>, personas }
+    }
+
+    return { stageOrder: swarm.state.stageOrder, agents: swarm.state.agents, edges: swarm.state.edges, personas: null }
   })
   const packetEdge = createMemo(() => replaySnapshot()?.packetEdge ?? null)
   const focusAgent = createMemo(() => replaySnapshot()?.focusAgent ?? null)
@@ -258,11 +311,18 @@ export default function SwarmCanvas() {
 
   return (
     <section data-testid="swarm-canvas" class="w-full max-w-2xl rounded-lg border border-border bg-surface p-4 shadow-lg">
-      <div class="mb-2 flex items-center justify-between">
+      <div class="mb-2 flex items-center justify-between gap-2">
         <h2 class="text-left text-xs uppercase tracking-wide text-text-muted">Swarm</h2>
-        <Show when={inReplay()}>
-          <span class="text-[10px] font-medium uppercase tracking-wide text-accent">Replay Mode</span>
-        </Show>
+        <div class="flex items-center gap-2">
+          <Show when={showTemplateIdle() && !inReplay()}>
+            <span class="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
+              {getActiveTemplate().name}
+            </span>
+          </Show>
+          <Show when={inReplay()}>
+            <span class="text-[10px] font-medium uppercase tracking-wide text-accent">Replay Mode</span>
+          </Show>
+        </div>
       </div>
 
       <Show when={inReplay()}>
@@ -356,14 +416,19 @@ export default function SwarmCanvas() {
         <For each={view().stageOrder}>
           {(agent) => {
             const status = () => view().agents[agent]?.status ?? 'idle'
+            const persona = () => view().personas?.[agent] ?? null
             const pos = () => positions[agent]
             const isBusy = () => status() === 'active' || status() === 'thinking'
+            const strokeClass = () => {
+              const color = persona()?.color
+              return (color && PERSONA_STROKE_CLASS[color]) || STATUS_STROKE[status()]
+            }
             const label = () => {
               const s = status()
               if (s === 'completed') return 'done'
               if (s === 'error') return 'error'
               if (isBusy()) return microStatusFor(agent)
-              return roleFor(agent)
+              return persona()?.role ?? roleFor(agent)
             }
             return (
               <Show when={pos()}>
@@ -386,7 +451,7 @@ export default function SwarmCanvas() {
                     cx={pos()!.x}
                     cy={pos()!.y}
                     r={radius()}
-                    class={`fill-surface-raised transition-[stroke,filter] duration-300 ${STATUS_STROKE[status()]} ${STATUS_GLOW_CLASS[status()]} ${
+                    class={`fill-surface-raised transition-[stroke,filter] duration-300 ${strokeClass()} ${STATUS_GLOW_CLASS[status()]} ${
                       status() === 'thinking' ? 'animate-pulse' : ''
                     }`}
                     stroke-width={status() === 'idle' ? 1.5 : 2.5}

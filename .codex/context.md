@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-16 - Pass D: AgentZ CLI Rebrand, Guided Onboarding & App Preview Polish
-- **Active Task**: UOW-16 complete — ready for next UOW
+- **Current UOW**: UOW-17 - Pass E Kickstart: Multi-Agent Swarm Catalog (templateRegistry.ts & Domain Switcher)
+- **Active Task**: UOW-17 complete — ready for next UOW
 
 ---
 
@@ -674,4 +674,65 @@ UOW-12's note above instead, and is unrelated to this one.)_
       (`audit stream error`) appeared only during the test's own `page.reload()` step — the same
       pre-existing, unrelated `auditStore.ts` behavior already root-caused and documented in UOW-15.
 - **UOW-16 complete.** All 3 Pass D requirement areas shipped.
+
+## [x] UOW 17 - Pass E Kickstart: Multi-Agent Swarm Catalog (templateRegistry.ts & Domain Switcher)
+
+- [x] Task 17.1: **Template Registry Construction.** New `src/config/templateRegistry.ts` — the
+      `DomainTemplate` interface (`id`, `name`, `description`, `systemPromptOverlay`, `swarmNodes`
+      persona list, `previewScenario`/`previewPrompt`) plus a 3-entry `TEMPLATE_REGISTRY`:
+      `order-entry` (AI PO/Policy Auditor/Order Fulfillment Agent, maps to the existing `acme-order`
+      scenario), `wfd` (Sous-Chef Agent/Grocery Pantry Agent/Media Linker Agent, no dedicated
+      generator yet), `itinerary` (Sports-Sync Agent/Movie-Stream Finder/Schedule Orchestrator, maps
+      to the existing `today-itinerary` scenario). Shared across the browser/server tsconfig
+      boundary via `tsconfig.node.json`'s established `actionKit.ts`-style explicit-file-include
+      pattern, not duplicated. New `src/lib/templateStore.ts` holds the active template id as a
+      plain module-level signal (mirrors `adminDrawerStore.ts`'s pattern).
+- [x] Task 17.2: **`/template` Slash Command.** Added to `terminalCommands.ts`'s existing
+      `SLASH_COMMANDS`-driven dispatcher (Pass D) — no args lists all three domains with a `→`
+      marker on the active one; `/template <id>` switches it (or prints a clean error for an
+      unknown id). Shows up in the same inline palette every other slash command already does.
+- [x] Task 17.3: **Dynamic Workspace Re-hydration.** `SwarmCanvas.tsx` shows the active template's
+      own persona nodes (their own literal-Tailwind-class stroke color, `PERSONA_STROKE_CLASS`) as
+      an idle preview whenever nothing real is running — a new `runGeneration` counter on
+      `swarmStore.ts`'s `SwarmState` bumps the instant a genuine pipeline run begins, and the canvas
+      switches over to the real run's real agent names immediately, never fabricating fake
+      telemetry under the template's persona names. `AppPreview.tsx` shows the active domain's name
+      and a "🎯 Preview this domain" button where a real generator exists (`previewScenario` set);
+      `wfd` honestly shows "Preview coming soon" instead of silently routing through the unrelated
+      generic default-sandbox card. The AI PO's system prompt now layers the active template's
+      `systemPromptOverlay` onto the base discovery prompt (client sends `templateId` on every turn;
+      `poInterviewHandler` looks it up and passes it to `poInterviewLLM.ts`) — reframing vocabulary
+      (vendor → dinner event, catalog → recipe ingredients, etc.) without changing the underlying
+      vendorName/catalog/hitlThreshold extraction contract, which stays the one proven schema across
+      all three domains rather than forking it three ways in this kickstart pass.
+- [x] Task 17.4: **Branding & UX Guardrails.** "AgentZ CLI" → "AgentZ" in `Terminal.tsx`; the `$`
+      shell-style prompt markers replaced with a clean `>` (echoed input history lines) and `✨`
+      (the live input row); every other visible "terminal"/"CLI" mention scrubbed
+      (`GuidedWorkflowBanner.tsx`, `ArtifactsPanel.tsx`'s empty-transcript fallback).
+- **Real bug found and fixed during verification:** the Pass D slash palette's Enter key always
+      re-completed the highlighted suggestion into the input — even when the input already exactly
+      matched a full command name, requiring a second Enter to actually submit (typing `/template`
+      in full and pressing Enter just re-filled `/template ` instead of running it). Fixed in
+      `Terminal.tsx`'s `handleKeyDown`: Enter now falls through to normal submit once the typed text
+      already exactly matches a command; Tab still always completes regardless.
+- **Documentation note:** `.codex/AGENTZ-STUDIO-SDK.md` already had a small, incomplete draft stub
+      for this exact feature (dangling/unclosed code fence, and inaccurately described a
+      `React.ComponentType` preview prop despite this being a SolidJS project) — likely left while
+      the directive was being drafted. Replaced it with a complete, accurate Section 14 rather than
+      silently deleting it or leaving the broken fragment in a load-bearing doc.
+- **Verification:** `npx tsc --noEmit` (as requested) and `npx tsc -b` both clean; `npm run build`
+      clean; `npm run test:sse` unaffected. Full production-mode Playwright pass confirmed: the
+      rebrand text and clean prompt markers; `/template` (no args) lists all three domain ids;
+      `/template wfd`/`/template itinerary`/`/template order-entry` each correctly re-render the
+      Swarm Canvas with that domain's own personas and correct per-node stroke colors (3 found for
+      the 3-node itinerary template); App Preview's domain row and "coming soon"/"Preview this
+      domain" fallback both render correctly per domain; clicking "Preview this domain" for
+      itinerary actually loads the real `today-itinerary` generator's code *and* correctly hands the
+      Swarm Canvas back to the real pipeline's own nodes (Planner/Architect) once a genuine build
+      starts; an unknown template id shows a clean error; and a real PO interview turn with the
+      `wfd` overlay active produced genuinely dinner-flavored phrasing ("So this Friday Family
+      Dinner is your event... what meals or dishes are you planning to serve, and what's the cost
+      per serving") — confirming the overlay has a real, measurable effect on the model's behavior,
+      not just wiring that compiles. Zero console errors throughout.
+- **UOW-17 complete.** All 4 Pass E kickstart directives shipped, plus the palette bug fix.
 

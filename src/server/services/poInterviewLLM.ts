@@ -116,6 +116,7 @@ export async function runPoInterviewTurn(
   transcript: PoTranscriptEntry[],
   known: PoKnownFields,
   userMessage: string | null,
+  templateOverlay?: string,
 ): Promise<PoTurnResult> {
   // Fail fast with a clear, named error rather than letting the SDK attempt
   // a network call it can't authenticate and throw its generic "Could not
@@ -124,11 +125,15 @@ export async function runPoInterviewTurn(
   if (!isAnthropicConfigured()) throw new AnthropicNotConfiguredError()
 
   const knownSummary = `Already confirmed so far: ${JSON.stringify(known)}`
+  // Pass E: layers the active domain template's flavor (templateRegistry.ts)
+  // onto the base prompt — reframes vocabulary only, never the underlying
+  // vendorName/catalog/hitlThreshold extraction contract above/below it.
+  const systemPrompt = templateOverlay ? `${SYSTEM_PROMPT}\n\n${templateOverlay}\n\n${knownSummary}` : `${SYSTEM_PROMPT}\n\n${knownSummary}`
 
   const response = await getAnthropicClient().messages.create({
     model: HAIKU_MODEL,
     max_tokens: 1024,
-    system: `${SYSTEM_PROMPT}\n\n${knownSummary}`,
+    system: systemPrompt,
     messages: buildMessages(transcript, userMessage),
     output_config: { format: { type: 'json_schema', schema: RESPONSE_SCHEMA } },
   })

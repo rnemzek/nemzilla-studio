@@ -3,6 +3,7 @@ import SwarmCanvas from './components/SwarmCanvas.tsx'
 import EcosystemNav from './components/EcosystemNav.tsx'
 import AppPreview from './components/AppPreview.tsx'
 import AuditLedgerPanel from './components/AuditLedgerPanel.tsx'
+import AdminDrawer from './components/AdminDrawer.tsx'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <AuditLedgerPanel />
         </div>
       </main>
+      <AdminDrawer />
     </div>
   )
 }

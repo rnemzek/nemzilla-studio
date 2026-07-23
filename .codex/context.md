@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-13 - Pass B: The Step-by-Step Replay Scrubber
-- **Active Task**: UOW-13 complete — ready for next UOW
+- **Current UOW**: UOW-14 - Pass C: Visitor Identity, Feedback Loops & Admin Session/Usage Drawer
+- **Active Task**: UOW-14 complete — ready for next UOW
 
 ---
 
@@ -501,4 +501,81 @@ UOW-12's note above instead, and is unrelated to this one.)_
       CSP fix above.
 - **UOW-13 complete.** All 4 Pass B requirements shipped, plus one genuine pre-existing CSP/inline-
       style bug found and fixed along the way.
+
+## [x] UOW 14 - Pass C: Visitor Identity, Feedback Loops & Admin Session/Usage Drawer
+
+- [x] Task 14.1: **Editable Visitor Persona & Identity.** New `src/lib/visitorStore.ts` — on first
+      visit, generates a fun default persona (`{FirstName}-{Role}-{3digit}`, e.g. `Sana-Scout-877`)
+      and a lightweight `visitorId`: SHA-256 (Web Crypto, same primitive `auditStore.ts` already
+      uses) of `navigator.userAgent` + a random per-browser token acting as the "session token" the
+      DoD calls for, truncated to 16 hex chars. Both persist to `localStorage`
+      (`nemzilla-studio:visitor`). New `src/components/VisitorTag.tsx` renders the editable
+      `Observer: [ Handle ] ✏️` tag in `EcosystemNav.tsx`'s header — click the pencil, edit inline,
+      Enter/blur to commit, Escape to cancel. An immediate heartbeat plus a 30s periodic one (paused
+      via `document.visibilityState` while the tab is hidden) keeps the server's view of "last seen"
+      honest for the Admin Drawer's active-duration display.
+- [x] Task 14.2: **Feedback & Assessment Drawer.** New `src/components/FeedbackModal.tsx` — a
+      subtle "💬 Feedback & Review" header button opens a modal with (a) a comment/issue textarea
+      and (b) a transparent "Would you hire/partner with me based on this build?" Yes/Needs-Work
+      choice plus an optional advice field, one combined submit. `src/server/routes/feedback.ts` +
+      `src/server/services/feedbackStore.ts` persist every submission as JSON lines under
+      `.codex/feedback/` (same shape as `auditLedger.ts`'s own persistence) and keep a bounded
+      in-memory list for the Admin Drawer. `src/server/services/githubIssueClient.ts` optionally
+      files the same feedback as a real GitHub Issue when `GITHUB_ISSUES_REPO`/`GITHUB_TOKEN` are
+      set (unset by default — see `.env.sample` — so a public visitor's feedback never auto-files
+      against a repo the operator hasn't explicitly opted into).
+- [x] Task 14.3: **On-Demand Admin Usage & Session Drawer.** New `src/server/services/
+      visitorTracker.ts` — an in-memory registry (mirrors `sessionManager.ts`'s builder-lock
+      simplicity) correlating a `visitorId` to `firstSeen`/`lastSeen`, milestone badges (`PO
+      Interview`, `Swarm Executed`, `Feedback Submitted`), and every pipeline `sessionId` that
+      visitor has driven. `GET /api/admin/sessions` (list) / `GET /api/admin/sessions/:visitorId`
+      (detail — visitor metadata + that visitor's feedback + the union of `getSessionAuditBlocks()`
+      across every linked `sessionId`, sorted by the ledger's own global `index`) power
+      `src/components/AdminDrawer.tsx`, a right-side slide-out (mirrors `CommandCenterDrawer.tsx`'s
+      pattern, opposite side). Reachable via `terminalCommands.ts`'s new `admin`/`sessions` CLI
+      commands or a `Ctrl+Alt+A` shortcut registered in the drawer itself — deliberately not linked
+      from any visible nav, per the ask's "hidden shortcut/toggle" framing, and consistent with the
+      rest of this app's no-auth posture (every other `/api/*` read is already public).
+      `src/lib/auditTrace.ts` extracts a shared `formatAuditLine()` (moved out of
+      `ArtifactsPanel.tsx`'s previously-private `traceLine()`) so the Agent Trace tab and the
+      Session Detail view render every action — including the new `po_interview_turn` — identically.
+      The PO interview route (`src/server/routes/poInterview.ts`) now accepts an optional
+      `sessionId`/`visitorId`/`handle` and, when present, audit-logs each turn under the interview's
+      own `sessionId` in real time (not just at completion) — this is what lets the Session Detail
+      view show "every prompt typed, PO response" turn-by-turn, reusing the exact same
+      `getSessionAuditBlocks()` query the swarm pipeline's telemetry already relies on rather than a
+      second storage path. `agentStreamHandler` (`agentStream.ts`) accepts optional
+      `?visitorId=&handle=` query params and links the pipeline session only for the connection that
+      actually claims the builder role (never a spectator), tagging `Swarm Executed` specifically
+      for `swarmSessionId` connections (the real PO-interview-driven build), not the classic
+      boot-demo/Cookbook path.
+- [x] Task 14.4: **High-Value Alert Webhook.** New `src/server/services/webhookNotifier.ts` —
+      `sendHighValueAlert()` POSTs a Discord/Slack-compatible JSON payload (`{content, text, ...}`,
+      covering both platforms' expected field without picking one) to an optional `WEBHOOK_URL`
+      (unset by default, always best-effort/non-blocking). Fired from two call sites: `
+      agentStreamHandler` when a visitor's connection actually claims the builder role for a real
+      swarm build, and `feedback.ts`'s route handler whenever a "Would you hire/partner with me?"
+      assessment is submitted (either answer — submitting the assessment at all is the high-intent
+      signal, not just a "Yes").
+- **Verification:** `npx tsc -b`/`npm run build`/`npm run test:sse` all clean. Full production-mode
+      Playwright pass (`NODE_ENV=production`, the project's established workaround, including real
+      billed Anthropic calls for a live PO interview — consistent with this project's prior
+      verification passes, e.g. UOW-13 Task 11.3/UOW-12): confirmed a generated persona tag renders
+      on first load, editing it persists correctly across a full page reload; a feedback submission
+      (comment + "Yes" + advice) shows the recorded confirmation; typing `admin` in the CLI opens the
+      drawer showing the tracked visitor with a `Feedback Submitted` badge, `Ctrl+Alt+A` closes it;
+      running a full discovery interview ("Radio Shack", 2 catalog items, $100 threshold) through to
+      a real swarm build correctly adds `PO Interview` and `Swarm Executed` badges and the Session
+      Detail view's Audit Trail shows the merged, chronologically-correct sequence — the classic
+      boot-demo's `agent_step`s, the new `po_interview_turn` blocks (with the real transcript text),
+      and the swarm build's own `agent_step`/`policy_check` blocks, all under the one visitor.
+- **Non-issue found and explicitly not fixed, for the record:** the Playwright pass's page-reload
+      step (verifying persona persistence) surfaced a console message —
+      `audit stream error TypeError: network error` — traced to `auditStore.ts`'s pre-existing
+      `connect()`, which has no page-unload handling around its `fetch()`; a real navigation/reload
+      kills the in-flight connection and its `catch` logs the resulting error. This is unrelated to
+      any Pass C code (that file is untouched this UOW beyond an unrelated Pass A export), only
+      fires on an actual page reload (not normal operation), and the log lands in a page context
+      already being torn down — flagged here rather than silently patched into an unrelated file.
+- **UOW-14 complete.** All 4 Pass C requirements shipped.
 

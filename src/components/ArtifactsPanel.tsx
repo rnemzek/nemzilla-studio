@@ -4,6 +4,7 @@ import { auditStore, AGENT_TRACE_ACTIONS, type AuditBlock } from '../lib/auditSt
 import { sandboxStore } from '../lib/sandboxStore.ts'
 import { runHistoryState, saveRun, deleteRun, type SavedRun, type SavedRunCatalog, type SavedRunPolicyRules } from '../lib/runHistoryStore.ts'
 import { replayState, startReplay, stopReplay } from '../lib/replayStore.ts'
+import { formatAuditLine } from '../lib/auditTrace.ts'
 import type { PoTranscriptEntry } from '../lib/poInterview.ts'
 
 type ArtifactTab = 'transcript' | 'inspector' | 'trace' | 'history'
@@ -21,23 +22,6 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour12: false })
 }
 
-function traceLine(block: AuditBlock): string {
-  const payload = (block.payload ?? {}) as Record<string, unknown>
-  switch (block.action) {
-    case 'agent_step':
-      return `[${payload.agent}] ${payload.state}`
-    case 'policy_check':
-      return `Policy check (${payload.type ?? 'unknown'}) — ${block.policyStatus}${
-        typeof payload.value === 'number' ? ` → $${payload.value}` : ''
-      }`
-    case 'generated_app_payload':
-      return `Synthesized app code — ${payload.scenario ?? 'unknown scenario'} (${payload.size ?? '?'} bytes)`
-    case 'pipeline_completed':
-      return 'Pipeline completed'
-    default:
-      return block.action
-  }
-}
 
 /**
  * Pass A: the Artifacts / Telemetry deck — a 3rd tab inside AppPreview
@@ -238,7 +222,7 @@ export default function ArtifactsPanel() {
           <For each={traceBlocks()} fallback={<p class="text-text-muted">No agent activity recorded yet.</p>}>
             {(block) => (
               <div class="mb-1.5 flex items-center justify-between gap-2 border-b border-border/40 pb-1.5">
-                <span class="text-text-muted">{traceLine(block)}</span>
+                <span class="text-text-muted">{formatAuditLine(block)}</span>
                 <span class="shrink-0 text-text-muted/70">{formatTime(block.timestamp)}</span>
               </div>
             )}

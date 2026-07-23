@@ -12,6 +12,9 @@ import { getBibleHandler } from './routes/bible.ts'
 import { getSessionBundleHandler, putSessionBundleArtifactHandler } from './routes/sessionBundle.ts'
 import { orderEventHandler } from './routes/orders.ts'
 import { poInterviewHandler, poInterviewMetaHandler } from './routes/poInterview.ts'
+import { submitFeedbackHandler, listFeedbackHandler } from './routes/feedback.ts'
+import { touchVisitorHandler } from './routes/visitor.ts'
+import { listSessionsAdminHandler, getSessionDetailAdminHandler } from './routes/admin.ts'
 
 const app = new Hono()
   .use('*', securityHeaders())
@@ -34,6 +37,11 @@ const app = new Hono()
   .post('/api/po/interview', (c) => poInterviewHandler(c))
   .get('/api/po/interview/meta', (c) => poInterviewMetaHandler(c))
   .get('/api/bible', (c) => getBibleHandler(c))
+  .post('/api/feedback', (c) => submitFeedbackHandler(c))
+  .get('/api/feedback', (c) => listFeedbackHandler(c))
+  .post('/api/visitor/touch', (c) => touchVisitorHandler(c))
+  .get('/api/admin/sessions', (c) => listSessionsAdminHandler(c))
+  .get('/api/admin/sessions/:visitorId', (c) => getSessionDetailAdminHandler(c))
   // Path must match SANDBOX_FRAME_PATH in src/lib/sandboxTemplate.ts and the
   // exemption in securityHeaders.ts.
   .get('/sandbox-frame', sandboxFrameHandler)

@@ -2,6 +2,7 @@ import { createStore } from 'solid-js/store'
 import { SANDBOX_FRAME_PATH, SANDBOX_MESSAGE, buildSandboxDocument } from './sandboxTemplate.ts'
 import { reportRole } from './sessionRoleStore.ts'
 import { playOrderTrajectory } from './policyTrajectoryStore.ts'
+import { getVisitor } from './visitorStore.ts'
 
 export type PreviewStatus = 'idle' | 'building' | 'ready' | 'error'
 export type PreviewTab = 'preview' | 'source' | 'artifacts'
@@ -158,12 +159,21 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
     return () => controller.abort()
   }
 
+  /** Pass C: tags the request with this browser's visitor identity so the server can correlate the resulting pipeline session (see visitorTracker.ts) — silently a no-op if the identity hasn't resolved yet. */
+  function visitorQuery(): string {
+    const visitor = getVisitor()
+    if (visitor.visitorId === 'pending') return ''
+    return `&visitorId=${encodeURIComponent(visitor.visitorId)}&handle=${encodeURIComponent(visitor.handle)}`
+  }
+
   function connectGenerator(prompt: string): () => void {
-    return connectToStream(`${window.location.origin}/api/agent/stream?prompt=${encodeURIComponent(prompt)}`)
+    return connectToStream(`${window.location.origin}/api/agent/stream?prompt=${encodeURIComponent(prompt)}${visitorQuery()}`)
   }
 
   function connectSwarmGenerator(swarmSessionId: string): () => void {
-    return connectToStream(`${window.location.origin}/api/agent/stream?swarmSessionId=${encodeURIComponent(swarmSessionId)}`)
+    return connectToStream(
+      `${window.location.origin}/api/agent/stream?swarmSessionId=${encodeURIComponent(swarmSessionId)}${visitorQuery()}`,
+    )
   }
 
   /**

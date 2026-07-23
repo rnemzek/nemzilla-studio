@@ -3,6 +3,7 @@ import { startPoInterview, submitPoAnswer, SYSTEM_ORDER_CEILING, type PoIntervie
 import { getSessionBundle, putSessionArtifact, type SessionBundle } from './sessionBundleClient.ts'
 import { sandboxStore } from './sandboxStore.ts'
 import { publishInterviewSnapshot } from './interviewStore.ts'
+import { openAdminDrawer } from './adminDrawerStore.ts'
 
 export type OutputKind = 'input' | 'output' | 'error' | 'system' | 'po'
 
@@ -11,7 +12,7 @@ export interface CommandContext {
   clear: () => void
 }
 
-export const COMMANDS = ['help', 'run', 'triad', 'metrics', 'clear', 'launch', 'build', 'andiamo'] as const
+export const COMMANDS = ['help', 'run', 'triad', 'metrics', 'clear', 'launch', 'build', 'andiamo', 'admin', 'sessions'] as const
 
 const LAUNCH_TARGETS: Record<string, string> = {
   robert: 'https://robert.nemzilla.net',
@@ -335,6 +336,11 @@ export async function runCommand(rawInput: string, ctx: CommandContext): Promise
       break
     case 'andiamo':
       await runAndiamo(ctx)
+      break
+    case 'admin':
+    case 'sessions':
+      openAdminDrawer()
+      ctx.print('Opening the Usage & Session Drawer…', 'system')
       break
     default:
       // UOW-13 CLI fallback: a genuinely unparsed *multi-word* string reads

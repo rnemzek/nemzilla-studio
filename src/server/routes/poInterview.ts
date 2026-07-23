@@ -1,6 +1,9 @@
 import type { Context } from 'hono'
 import { runPoInterviewTurn, SYSTEM_PROMPT, type PoKnownFields, type PoTranscriptEntry } from '../services/poInterviewLLM.ts'
 import { classifyAnthropicError, type LlmErrorCategory } from '../services/anthropicClient.ts'
+import { isValidSessionId } from '../services/sessionBundleRecorder.ts'
+import { isValidVisitorId, sanitizeHandle, touchVisitor, linkPipelineSession, addMilestone } from '../services/visitorTracker.ts'
+import { enqueueAuditEvent } from '../services/auditLedger.ts'
 
 /** Maps each diagnosed failure category to the HTTP status returned to the client — distinct enough to tell "not configured" (503, an operator problem) apart from a transient upstream failure (502, might work on retry) from the browser's network tab alone. */
 const STATUS_BY_CATEGORY = {
@@ -82,7 +85,14 @@ export async function poInterviewHandler(c: Context) {
     return c.json({ error: 'invalid JSON body' }, 400)
   }
 
-  const { transcript, known, userMessage } = (body ?? {}) as { transcript?: unknown; known?: unknown; userMessage?: unknown }
+  const { transcript, known, userMessage, sessionId, visitorId, handle } = (body ?? {}) as {
+    transcript?: unknown
+    known?: unknown
+    userMessage?: unknown
+    sessionId?: unknown
+    visitorId?: unknown
+    handle?: unknown
+  }
 
   if (!isValidTranscript(transcript) || transcript.length > MAX_TRANSCRIPT_LENGTH) {
     return c.json({ error: 'invalid transcript' }, 400)
@@ -96,6 +106,27 @@ export async function poInterviewHandler(c: Context) {
 
   try {
     const result = await runPoInterviewTurn(transcript, known, typeof userMessage === 'string' ? userMessage : null)
+
+    // Pass C: correlates this interview to a visitor and audit-logs the turn
+    // in real time (tagged by the interview's own sessionId, the same field
+    // swarm pipeline runs use) — so the Admin Drawer's Session Detail view
+    // can show "every prompt typed, PO response" via the exact same
+    // getSessionAuditBlocks() query it uses for swarm telemetry, with no
+    // separate storage path. Optional: an old/incognito client that doesn't
+    // send these just isn't tracked — the interview itself still works.
+    if (typeof sessionId === 'string' && isValidSessionId(sessionId) && isValidVisitorId(visitorId)) {
+      const safeHandle = sanitizeHandle(handle)
+      touchVisitor(visitorId, safeHandle)
+      linkPipelineSession(visitorId, sessionId)
+      enqueueAuditEvent(
+        'po_interview_turn',
+        { visitorId, handle: safeHandle, userMessage: typeof userMessage === 'string' ? userMessage.slice(0, 500) : null, reply: result.reply.slice(0, 1000) },
+        'allowed',
+        sessionId,
+      )
+      if (result.done) addMilestone(visitorId, 'PO Interview')
+    }
+
     return c.json(result)
   } catch (err) {
     const { category, logMessage } = classifyAnthropicError(err)

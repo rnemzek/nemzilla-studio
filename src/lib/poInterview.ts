@@ -8,6 +8,8 @@
  * anymore, just state bookkeeping and the network call.
  */
 
+import { getVisitor } from './visitorStore.ts'
+
 export interface PoTranscriptEntry {
   role: 'po' | 'user'
   message: string
@@ -63,12 +65,17 @@ async function callInterviewApi(
   transcript: PoTranscriptEntry[],
   known: { vendorName: string | null; catalog: PoCatalogItem[] | null; hitlThreshold: number | null },
   userMessage: string | null,
+  sessionId: string,
 ): Promise<PoInterviewApiResponse> {
   try {
+    // Pass C: correlates this interview to a visitor (visitorStore.ts) and
+    // lets the server audit-log the turn under this interview's own
+    // sessionId — powers the Admin Drawer's Session Detail view.
+    const visitor = getVisitor()
     const res = await fetch(`${window.location.origin}/api/po/interview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript, known, userMessage }),
+      body: JSON.stringify({ transcript, known, userMessage, sessionId, visitorId: visitor.visitorId, handle: visitor.handle }),
     })
     if (!res.ok) {
       // The server tags each failure category distinctly (e.g. "llm_not_configured"
@@ -119,13 +126,13 @@ function createPoInterview(): PoInterviewState {
 export async function startPoInterview(openingMessage?: string): Promise<PoInterviewStep> {
   const state = createPoInterview()
   const known = { vendorName: null, catalog: null, hitlThreshold: null }
-  const data = await callInterviewApi(state.transcript, known, openingMessage ?? null)
+  const data = await callInterviewApi(state.transcript, known, openingMessage ?? null, state.sessionId)
   return applyTurn(state, data, openingMessage ?? null)
 }
 
 /** Advances the interview by one user answer. */
 export async function submitPoAnswer(state: PoInterviewState, userMessage: string): Promise<PoInterviewStep> {
   const known = { vendorName: state.vendorName, catalog: state.catalog, hitlThreshold: state.hitlThreshold }
-  const data = await callInterviewApi(state.transcript, known, userMessage)
+  const data = await callInterviewApi(state.transcript, known, userMessage, state.sessionId)
   return applyTurn(state, data, userMessage)
 }

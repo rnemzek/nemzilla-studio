@@ -4,6 +4,8 @@ import { generateAppSnippet } from '../prompts/appGeneratorPrompt.ts'
 import { checkForbiddenOperation, checkRateLimit, resolveOrderThreshold, SYSTEM_CEILING } from './policyEngine.ts'
 import { emitPipelineEvent, type PipelineEvent } from './eventBus.ts'
 import { isValidSessionId, readSessionBundle } from './sessionBundleRecorder.ts'
+import { isValidVisitorId, sanitizeHandle, touchVisitor, linkPipelineSession, addMilestone } from './visitorTracker.ts'
+import { sendHighValueAlert } from './webhookNotifier.ts'
 import { dispatchDomainAgents, type DomainAgentResult } from './domainAgents.ts'
 import { synthesizeOrderEntryApp, type SwarmCatalogItem } from './swarmCodeSynthesizer.ts'
 import {
@@ -486,6 +488,13 @@ export function agentStreamHandler(c: Context) {
     return c.json({ error: 'invalid swarmSessionId' }, 400)
   }
 
+  // Pass C: correlates this connection to a visitor for the Admin Usage &
+  // Session Drawer. Optional and loosely validated (an old/incognito tab
+  // with no visitorId yet just isn't tracked) — never blocks the pipeline.
+  const visitorIdParam = c.req.query('visitorId')
+  const handleParam = c.req.query('handle')
+  const visitorId = isValidVisitorId(visitorIdParam) ? visitorIdParam : null
+
   // System Ceiling: every connection is an "API call" against the platform's
   // hard rate limit (see policyEngine.ts / AGENTZ-STUDIO-SDK.md section 6).
   // Checked before claiming a session role at all, so a denial is a plain 429.
@@ -504,6 +513,24 @@ export function agentStreamHandler(c: Context) {
     sessionId,
     audit: { payload: { prompt: prompt ?? null, swarmSessionId: swarmSessionId ?? null, role } },
   })
+
+  // Only the connection actually driving the pipeline (not a spectator, and
+  // not the classic prompt-only demo/Cookbook path) counts as "Swarm
+  // Executed" — the ask's own high-intent example is specifically a real
+  // PO-interview-driven swarm build, not the boot demo.
+  if (visitorId && role === 'builder') {
+    const handle = sanitizeHandle(handleParam)
+    touchVisitor(visitorId, handle)
+    linkPipelineSession(visitorId, sessionId)
+    if (swarmSessionId) {
+      addMilestone(visitorId, 'Swarm Executed')
+      sendHighValueAlert(`🚀 ${handle} launched a Swarm Build (session ${swarmSessionId}).`, {
+        visitorId,
+        handle,
+        swarmSessionId,
+      })
+    }
+  }
 
   return serveSessionStream(c, role, sessionId, prompt, swarmSessionId)
 }

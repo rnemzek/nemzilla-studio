@@ -3,6 +3,8 @@ import CommandCenterDrawer from './CommandCenterDrawer.tsx'
 import BibleModal from './BibleModal.tsx'
 import CookbookDropdown from './CookbookDropdown.tsx'
 import RnAvatar from './RnAvatar.tsx'
+import VisitorTag from './VisitorTag.tsx'
+import FeedbackModal from './FeedbackModal.tsx'
 import { currentRoleBadge } from '../lib/sessionRoleStore.ts'
 
 const ROLE_BADGE_LABEL: Record<'builder' | 'spectator', string> = {
@@ -26,6 +28,8 @@ function EcosystemNav() {
         <CommandCenterDrawer />
       </div>
       <nav aria-label="Studio controls" class="flex flex-wrap items-center gap-2">
+        <VisitorTag />
+        <FeedbackModal />
         <BibleModal />
         <CookbookDropdown />
         <Show when={currentRoleBadge()}>

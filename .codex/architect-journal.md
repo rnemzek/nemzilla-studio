@@ -672,6 +672,40 @@
   updates, and Exit restoring live mode all confirmed — zero console errors after the CSP fix.
 - **UOW-13 complete.** All 4 Pass B requirements shipped, plus the CSP/inline-style fix.
 
+### UOW-14 Sync — Pass C: Visitor Identity, Feedback Loops & Admin Session/Usage Drawer — 2026-07-23
+- **Visitor Identity:** new `visitorStore.ts` — a fun default persona + a SHA-256-hashed
+  `visitorId` (userAgent + a random per-browser token), both in `localStorage`. `VisitorTag.tsx`
+  renders the editable `Observer: [ Handle ] ✏️` tag in the header; a heartbeat (immediate + 30s,
+  paused when the tab is hidden) keeps the server's "last seen" honest.
+- **Feedback & Assessment Drawer:** `FeedbackModal.tsx` — comment form + "Would you hire/partner
+  with me?" Yes/Needs-Work + optional advice, one combined submit. `feedbackStore.ts` persists as
+  JSON lines (mirrors `auditLedger.ts`'s own pattern); `githubIssueClient.ts` optionally files it as
+  a real GitHub Issue when `GITHUB_ISSUES_REPO`/`GITHUB_TOKEN` are configured — unset by default.
+- **Admin Usage & Session Drawer:** `visitorTracker.ts` (in-memory, mirrors `sessionManager.ts`'s
+  simplicity) correlates a visitor to milestones (`PO Interview`/`Swarm Executed`/`Feedback
+  Submitted`) and every pipeline `sessionId` they've driven. `AdminDrawer.tsx` (right-side
+  slide-out) — List view + Detail view (that visitor's feedback + the union of
+  `getSessionAuditBlocks()` across their linked sessions). Reachable via the CLI's new `admin`/
+  `sessions` commands or `Ctrl+Alt+A` — deliberately unlinked from any visible nav, matching this
+  app's existing no-auth posture (every other `/api/*` read is already public). The PO interview
+  route now audit-logs each turn in real time under the interview's own `sessionId`, so the Session
+  Detail view's "every prompt typed, PO response" reuses the exact same query the swarm pipeline's
+  telemetry already relies on — no second storage path. `auditTrace.ts` extracts a shared
+  `formatAuditLine()` (out of `ArtifactsPanel.tsx`) so both views render every action identically.
+- **High-Value Alert Webhook:** `webhookNotifier.ts` — a Discord/Slack-compatible JSON POST to an
+  optional `WEBHOOK_URL`, fired on a real swarm build claim and on any "would you hire me"
+  submission (either answer). Best-effort, unset by default.
+- **Verification:** `tsc -b`/`build`/`test:sse` clean. Full production-mode Playwright pass —
+  including real billed Anthropic calls for a live PO interview, consistent with this project's
+  established verification practice — confirmed persona generation + edit + reload persistence,
+  feedback submission, admin drawer open/close via CLI and keyboard shortcut, and a full interview →
+  swarm build correctly landing both `PO Interview`/`Swarm Executed` badges and a chronologically
+  merged Audit Trail (boot-demo + interview turns + swarm build) under one visitor.
+- **Non-issue flagged, not fixed:** a page-reload test step surfaced a benign console message from
+  `auditStore.ts`'s pre-existing `fetch()` (no page-unload handling) — unrelated to Pass C, only
+  fires on an actual reload, logged in a page context already being torn down.
+- **UOW-14 complete.** All 4 Pass C requirements shipped.
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

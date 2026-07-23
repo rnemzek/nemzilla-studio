@@ -1,6 +1,11 @@
 import { ACTION_KIT_REGISTRY } from '../../lib/actionKit.ts'
 import { resolveOrderThreshold, SYSTEM_CEILING, type PolicyCheckResult } from '../services/policyEngine.ts'
 
+// Mirrors SANDBOX_MESSAGE.order in src/lib/sandboxTemplate.ts — see
+// swarmCodeSynthesizer.ts for the same duplicated-constant pattern
+// (src/server and src/lib sit in separate tsconfig projects).
+const ORDER_MESSAGE_TYPE = 'nemzilla:sandbox-order-decision'
+
 export const SCENARIOS = ['acme-order', 'today-itinerary', 'b2b-lead-scoring', 'default-sandbox'] as const
 export type ScenarioId = (typeof SCENARIOS)[number]
 
@@ -57,7 +62,7 @@ export function matchScenario(userPrompt: string): ScenarioId {
   return 'default-sandbox'
 }
 
-function buildAcmeOrderSnippet(autoApproveCeiling: number, denyCeiling: number): string {
+function buildAcmeOrderSnippet(autoApproveCeiling: number, denyCeiling: number, sessionId: string): string {
   return `<div class="min-h-screen bg-slate-950 p-6 text-slate-100">
   <div class="mx-auto max-w-2xl">
     <h1 class="text-2xl font-bold">ACME Corp — Order Entry &amp; Approval</h1>
@@ -98,10 +103,17 @@ function buildAcmeOrderSnippet(autoApproveCeiling: number, denyCeiling: number):
     { id: 'doll', name: 'ACME Blowup Doll', price: 65 },
     { id: 'tunnel', name: 'ACME Fake Tunnel Painting', price: 420 },
   ]
+  var SESSION_ID = ${JSON.stringify(sessionId)}
   var AUTO_APPROVE_CEILING = ${autoApproveCeiling}
   var DENY_CEILING = ${denyCeiling}
   var cart = []
   var orderCounter = 99
+
+  function postOrderEvent(decision, total) {
+    try {
+      window.parent.postMessage({ type: '${ORDER_MESSAGE_TYPE}', sessionId: SESSION_ID, total: total, decision: decision }, '*')
+    } catch (e) {}
+  }
 
   function renderCatalog() {
     var catalog = document.getElementById('catalog')
@@ -146,23 +158,30 @@ function buildAcmeOrderSnippet(autoApproveCeiling: number, denyCeiling: number):
     if (cart.length === 0) return
     if (total <= AUTO_APPROVE_CEILING) {
       notify('Policy: total $' + total.toFixed(2) + ' <= $' + AUTO_APPROVE_CEILING + ' — auto-approved.')
+      postOrderEvent('auto_approved', total)
       shipOrder()
     } else if (total <= DENY_CEILING) {
+      postOrderEvent('hitl_pending', total)
       document.getElementById('hitl').classList.remove('hidden')
     } else {
       notify('Policy: total $' + total.toFixed(2) + ' > $' + DENY_CEILING + ' — auto-denied.')
+      postOrderEvent('auto_denied', total)
     }
   })
 
   document.getElementById('approve').addEventListener('click', function () {
+    var total = cart.reduce(function (sum, p) { return sum + p.price }, 0)
     document.getElementById('hitl').classList.add('hidden')
     notify('Supervisor approved the order.')
+    postOrderEvent('hitl_approved', total)
     shipOrder()
   })
 
   document.getElementById('deny').addEventListener('click', function () {
+    var total = cart.reduce(function (sum, p) { return sum + p.price }, 0)
     document.getElementById('hitl').classList.add('hidden')
     notify('Supervisor denied the order.')
+    postOrderEvent('hitl_denied', total)
   })
 
   renderCatalog()
@@ -384,12 +403,12 @@ export interface GeneratedApp {
   policyCheck?: PolicyCheckResult
 }
 
-export function generateAppSnippet(userPrompt: string): GeneratedApp {
+export function generateAppSnippet(userPrompt: string, sessionId: string): GeneratedApp {
   const scenario = matchScenario(userPrompt)
   switch (scenario) {
     case 'acme-order': {
       const policyCheck = resolveOrderThreshold(extractRequestedThreshold(userPrompt))
-      const code = buildAcmeOrderSnippet(policyCheck.value!, SYSTEM_CEILING.maxOrderThreshold)
+      const code = buildAcmeOrderSnippet(policyCheck.value!, SYSTEM_CEILING.maxOrderThreshold, sessionId)
       return { scenario, code, policyCheck }
     }
     case 'today-itinerary':

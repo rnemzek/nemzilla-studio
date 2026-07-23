@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-11 - Conversational Swarm Engine & Pluggable Micro-Agents
-- **Active Task**: UOW-11 complete — ready for next UOW
+- **Current UOW**: UOW-13 - Pass B: The Step-by-Step Replay Scrubber
+- **Active Task**: UOW-13 complete — ready for next UOW
 
 ---
 
@@ -439,4 +439,66 @@ foundation this UOW builds on; flagging the tracker gap here rather than silentl
       role query; no application code was at fault.
 - **UOW-12 complete.** All 4 Pass A requirements shipped, plus one genuine pre-existing spectate-
       stream reconnection bug found and fixed along the way.
+
+## [x] UOW 13 - Pass B: The Step-by-Step Replay Scrubber
+_(Note: this is the first session to log a UOW numbered 13 to this tracker — an earlier, unlogged
+session informally called its own work "UOW-13" before this one; that work is documented under
+UOW-12's note above instead, and is unrelated to this one.)_
+
+- [x] Task 13.1: **Replay Mode Controller.** New `src/lib/replayStore.ts` — a global singleton
+      (`run`, `steps`, `stepIndex`, `playing`, `speed`) driving Replay Mode from anywhere in the
+      tree. `steps` is a saved run's `auditBlocks` filtered to `AGENT_TRACE_ACTIONS` (moved from
+      `ArtifactsPanel.tsx` into a shared export on `auditStore.ts` so the Agent Trace tab and the
+      replay scrubber always agree on what counts as a "step"). `ArtifactsPanel.tsx`'s Run History
+      tab gained "▶ Replay Current Run" (replays whatever's live right now, no Save Run required —
+      builds an ephemeral `SavedRun`-shaped object from the same reactive sources `handleSaveRun`
+      already reads) and a per-row "▶ Replay" button; a banner ("▶ Replaying: {name}") appears with
+      an Exit Replay action, mirroring the existing "Viewing saved run" banner's pattern.
+- [x] Task 13.2: **Visual Packet Trajectory.** `swarmStore.ts` gained `buildReplaySnapshot(steps,
+      uptoIndex)`, folding a run's `agent_step` blocks up to the scrubbed index through the exact
+      same `ensureAgent()`/`RUN_START_AGENTS` reducer the live store's `dispatch()` already uses —
+      a replayed run renders identically to how it looked live instead of a second parallel state
+      machine. `SwarmCanvas.tsx` now reads a `view()` memo (replay snapshot when `replayState.run`
+      is set, else the live store) for every node/edge render, pauses the live `/api/agent/spectate`
+      connection while replaying (and resumes it on Exit) via a `createEffect` gating
+      `swarm.connect()`, and renders a "Step X of Y" scrubber header (Back / Play·Pause / Forward,
+      1x/2x speed, Exit) plus a small amber dot that tweens between each hand-off's source/target
+      node positions over ~900ms (a plain `requestAnimationFrame` tween, not SVG `<animateMotion>`,
+      to sidestep cross-browser SMIL-restart quirks) and an amber pulsing ring around whichever
+      node(s) the current step touches.
+- [x] Task 13.3: **Contextual Packet Inspector.** A panel under the canvas shows the current
+      step's `action`/`timestamp`/JSON `payload`; hovering a different node looks up that agent's
+      own most recent `agent_step` at-or-before the scrubbed index instead (falls back to "no step
+      data" if that agent hasn't acted yet at this point in the replay).
+- [x] Task 13.4: **Runtime Policy Interceptor Visual.** New `src/lib/policyTrajectoryStore.ts`
+      drives a brief 3-stage trajectory ("Cart Submitted" → "Policy Checked ($X · decision)" →
+      "Audit Ledger Signed") rendered as a bar above the iframe in `AppPreview.tsx`, triggered by
+      the same `SANDBOX_MESSAGE.order` postMessage `sandboxStore.ts` already relays to
+      `/api/orders/event` — auto-hides ~1.8s after the final stage. Along the way, extended
+      `buildAcmeOrderSnippet()` (`appGeneratorPrompt.ts`) to post that same order-decision message
+      the swarm-synthesized apps already did (`swarmCodeSynthesizer.ts`) — previously only a
+      completed PO-interview build could demonstrate this at all; now the default "ACME Order" boot
+      demo can too. Threaded the classic pipeline's own builder-lock `sessionId` (already a
+      `crypto.randomUUID()`) through `generateAppSnippet()` into the snippet so its order-decision
+      relay validates against `isValidSessionId()` the same way the swarm path's does.
+- **Real bug found and fixed, not new in this UOW:** `SwarmCanvas.tsx`'s node glow (`STATUS_GLOW`)
+      used an inline `style={{ filter: ... }}`, which production's CSP (`style-src 'self'`, no
+      `unsafe-inline` — `securityHeaders.ts`) silently drops — the glow effect had never actually
+      rendered in production despite earlier UOWs claiming "zero console errors" (their test flows
+      apparently never happened to trigger/check for this specific message). Found via this UOW's
+      own Playwright pass after adding one more instance of the same pattern for the packet dot.
+      Fixed both by moving to Tailwind arbitrary-value classes (`drop-shadow-[...]`), which compile
+      into the external stylesheet rather than an inline attribute.
+- **Verification:** `npx tsc -b`/`npm run build`/`npm run test:sse` all clean. Full production-mode
+      Playwright pass (`NODE_ENV=production`, per this project's established dev-server-HMR-loop
+      workaround): confirmed the boot demo's ACME order flow renders the 3-stage governance
+      trajectory end to end with the correct decision label and auto-hide timing; confirmed Replay
+      Current Run's banner, the Swarm Canvas scrubber (Step X of Y, Play/Pause/Forward/Back, both
+      speeds), the packet dot appearing precisely on hand-off (`EXECUTING`) steps with both
+      endpoint nodes ringed and persisting correctly through non-hand-off inspector-only steps
+      (`policy_check`, `generated_app_payload`) until the corresponding `DONE`, the Packet Inspector
+      updating on node hover, and Exit correctly restoring live mode — zero console errors after the
+      CSP fix above.
+- **UOW-13 complete.** All 4 Pass B requirements shipped, plus one genuine pre-existing CSP/inline-
+      style bug found and fixed along the way.
 

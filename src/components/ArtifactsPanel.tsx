@@ -1,8 +1,9 @@
 import { For, Show, createMemo, createSignal, onMount } from 'solid-js'
 import { interviewState } from '../lib/interviewStore.ts'
-import { auditStore, type AuditBlock } from '../lib/auditStore.ts'
+import { auditStore, AGENT_TRACE_ACTIONS, type AuditBlock } from '../lib/auditStore.ts'
 import { sandboxStore } from '../lib/sandboxStore.ts'
 import { runHistoryState, saveRun, deleteRun, type SavedRun, type SavedRunCatalog, type SavedRunPolicyRules } from '../lib/runHistoryStore.ts'
+import { replayState, startReplay, stopReplay } from '../lib/replayStore.ts'
 import type { PoTranscriptEntry } from '../lib/poInterview.ts'
 
 type ArtifactTab = 'transcript' | 'inspector' | 'trace' | 'history'
@@ -15,8 +16,6 @@ const TABS: Array<{ id: ArtifactTab; label: string }> = [
 ]
 
 type AccordionSection = 'system' | 'inputs' | 'json'
-
-const AGENT_TRACE_ACTIONS = new Set(['agent_step', 'policy_check', 'generated_app_payload', 'pipeline_completed'])
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour12: false })
@@ -105,6 +104,20 @@ export default function ArtifactsPanel() {
     setTimeout(() => setSavedMessage(null), 2500)
   }
 
+  /** Replays whatever is currently live (interview + audit trace) without requiring a Save Run first. */
+  function handleReplayLive() {
+    startReplay({
+      id: 'live-session',
+      name: 'Current Session (live)',
+      createdAt: new Date().toISOString(),
+      transcript: transcript(),
+      catalog: catalog(),
+      policyRules: policyRules(),
+      auditBlocks: auditBlocks(),
+      code: sandboxStore.state.code,
+    })
+  }
+
   return (
     <div class="flex h-full flex-col">
       <div class="flex gap-1 border-b border-border px-2 pt-1">
@@ -122,6 +135,19 @@ export default function ArtifactsPanel() {
           )}
         </For>
       </div>
+
+      <Show when={replayState.run}>
+        {(run) => (
+          <div class="flex items-center justify-between gap-2 border-b border-border bg-accent/10 px-3 py-1.5 text-[11px] text-accent">
+            <span>
+              ▶ Replaying: <span class="font-medium">{run().name}</span> — see the Swarm panel for the packet trajectory.
+            </span>
+            <button type="button" class="rounded border border-accent/40 px-2 py-0.5 hover:bg-accent/10" onClick={() => stopReplay()}>
+              Exit Replay
+            </button>
+          </div>
+        )}
+      </Show>
 
       <Show when={viewedRun()}>
         {(run) => (
@@ -236,6 +262,14 @@ export default function ArtifactsPanel() {
             >
               📦 Save Run
             </button>
+            <button
+              type="button"
+              disabled={auditBlocks().length === 0}
+              class="whitespace-nowrap rounded-md border border-accent/50 px-2 py-1 text-accent transition-colors hover:bg-accent/10 disabled:opacity-50"
+              onClick={handleReplayLive}
+            >
+              ▶ Replay Current Run
+            </button>
           </div>
           <Show when={savedMessage()}>
             <p class="mb-2 text-emerald-400">{savedMessage()}</p>
@@ -255,6 +289,14 @@ export default function ArtifactsPanel() {
                   </button>
                   <button
                     type="button"
+                    disabled={run.auditBlocks.length === 0}
+                    class="rounded border border-accent/50 px-1.5 py-0.5 text-accent hover:bg-accent/10 disabled:opacity-50"
+                    onClick={() => startReplay(run)}
+                  >
+                    ▶ Replay
+                  </button>
+                  <button
+                    type="button"
                     class="rounded border border-border px-1.5 py-0.5 hover:bg-surface"
                     onClick={() => sandboxStore.setCode(run.code)}
                   >
@@ -266,6 +308,7 @@ export default function ArtifactsPanel() {
                     onClick={() => {
                       deleteRun(run.id)
                       if (viewedRun()?.id === run.id) setViewedRun(null)
+                      if (replayState.run?.id === run.id) stopReplay()
                     }}
                   >
                     ✕

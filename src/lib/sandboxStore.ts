@@ -1,6 +1,7 @@
 import { createStore } from 'solid-js/store'
 import { SANDBOX_FRAME_PATH, SANDBOX_MESSAGE, buildSandboxDocument } from './sandboxTemplate.ts'
 import { reportRole } from './sessionRoleStore.ts'
+import { playOrderTrajectory } from './policyTrajectoryStore.ts'
 
 export type PreviewStatus = 'idle' | 'building' | 'ready' | 'error'
 export type PreviewTab = 'preview' | 'source' | 'artifacts'
@@ -199,6 +200,7 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
         setState({ status: 'error', errorMessage: data.message ?? 'Unknown runtime error' })
         break
       case SANDBOX_MESSAGE.order:
+        playOrderTrajectory(typeof data.total === 'number' ? data.total : 0, typeof data.decision === 'string' ? data.decision : '')
         relayOrderEvent(data)
         break
     }

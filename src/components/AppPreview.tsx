@@ -1,6 +1,7 @@
 import { For, Show, onCleanup, onMount } from 'solid-js'
 import { sandboxStore, type PreviewTab } from '../lib/sandboxStore.ts'
 import { SANDBOX_FRAME_PATH } from '../lib/sandboxTemplate.ts'
+import { policyTrajectoryState, TRAJECTORY_STAGES, decisionLabel } from '../lib/policyTrajectoryStore.ts'
 import SaveRecipeModal from './SaveRecipeModal.tsx'
 import ArtifactsPanel from './ArtifactsPanel.tsx'
 
@@ -62,6 +63,38 @@ export default function AppPreview() {
           <span class="font-mono text-xs text-text-muted">{STATUS_LABEL[sandbox.state.status]}</span>
         </div>
       </div>
+
+      <Show when={sandbox.state.tab === 'preview' && policyTrajectoryState.active}>
+        <div class="flex items-center justify-between gap-2 border-b border-border bg-surface-raised px-4 py-2 text-[11px]">
+          <div class="flex items-center gap-1.5">
+            <For each={TRAJECTORY_STAGES}>
+              {(label, i) => (
+                <>
+                  <Show when={i() > 0}>
+                    <span
+                      class={`h-px w-4 transition-colors duration-300 ${
+                        policyTrajectoryState.stage >= i() ? 'bg-accent' : 'bg-border'
+                      }`}
+                    />
+                  </Show>
+                  <span
+                    class={`rounded-full px-2 py-0.5 font-medium transition-colors duration-300 ${
+                      policyTrajectoryState.stage === i()
+                        ? 'animate-pulse bg-accent text-slate-950'
+                        : policyTrajectoryState.stage > i()
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : 'bg-border/40 text-text-muted'
+                    }`}
+                  >
+                    {label}
+                    {i() === 1 ? ` ($${policyTrajectoryState.total.toFixed(0)} · ${decisionLabel(policyTrajectoryState.decision)})` : ''}
+                  </span>
+                </>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
 
       <div class="h-80" classList={{ hidden: sandbox.state.tab !== 'preview' }}>
         <iframe

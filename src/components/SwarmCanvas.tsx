@@ -1,7 +1,16 @@
-import { For, Show, createEffect, createMemo, onCleanup, onMount } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { createStore, produce, reconcile } from 'solid-js/store'
 import { createForceLayout, runLayoutSimulation, type SimLink } from '../lib/swarmLayout.ts'
-import { createSwarmStore, edgeKey, DEFAULT_STAGE_ORDER, type AgentName, type AgentStatus } from '../lib/swarmStore.ts'
+import {
+  createSwarmStore,
+  edgeKey,
+  buildReplaySnapshot,
+  DEFAULT_STAGE_ORDER,
+  type AgentName,
+  type AgentStatus,
+} from '../lib/swarmStore.ts'
+import { replayState, stopReplay, togglePlay, stepForward, stepBack, setSpeed } from '../lib/replayStore.ts'
+import type { AuditBlock } from '../lib/auditStore.ts'
 import RnAvatar from './RnAvatar.tsx'
 
 const WIDTH = 480
@@ -49,12 +58,15 @@ const STATUS_STROKE: Record<AgentStatus, string> = {
   error: 'stroke-red-400',
 }
 
-const STATUS_GLOW: Record<AgentStatus, string | undefined> = {
-  idle: undefined,
-  active: 'drop-shadow(0 0 6px var(--color-accent-glow))',
-  thinking: 'drop-shadow(0 0 6px var(--color-accent-glow))',
-  completed: 'drop-shadow(0 0 4px rgba(52,211,153,0.6))',
-  error: 'drop-shadow(0 0 6px rgba(248,113,113,0.7))',
+// Tailwind arbitrary-value classes rather than inline `style` — production's
+// CSP (style-src 'self', no unsafe-inline) silently drops inline style
+// attributes, which is why this had never actually rendered in production.
+const STATUS_GLOW_CLASS: Record<AgentStatus, string> = {
+  idle: '',
+  active: 'drop-shadow-[0_0_6px_var(--color-accent-glow)]',
+  thinking: 'drop-shadow-[0_0_6px_var(--color-accent-glow)]',
+  completed: 'drop-shadow-[0_0_4px_rgba(52,211,153,0.6)]',
+  error: 'drop-shadow-[0_0_6px_rgba(248,113,113,0.7)]',
 }
 
 function edgePath(from: { x: number; y: number }, to: { x: number; y: number }, radius: number): string {
@@ -96,11 +108,83 @@ export default function SwarmCanvas() {
   }
   const [positions, setPositions] = createStore<Record<AgentName, { x: number; y: number }>>(initialPositions)
 
+  /**
+   * Pass B: Replay Mode. `replayState` is a global singleton (replayStore.ts)
+   * — ArtifactsPanel.tsx's "Replay Run" actions set it, this canvas reacts.
+   * While a run is being replayed, the canvas renders a folded snapshot of
+   * that run's own audit blocks (`buildReplaySnapshot`) instead of the live
+   * spectator feed, and the live connection is paused (see the onMount
+   * below) rather than left running underneath the replay.
+   */
+  const inReplay = createMemo(() => replayState.run !== null)
+  const replaySnapshot = createMemo(() => (inReplay() ? buildReplaySnapshot(replayState.steps, replayState.stepIndex) : null))
+  const view = createMemo(() => {
+    const snap = replaySnapshot()
+    if (snap) return { stageOrder: snap.stageOrder, agents: snap.agents, edges: snap.edges }
+    return { stageOrder: swarm.state.stageOrder, agents: swarm.state.agents, edges: swarm.state.edges }
+  })
+  const packetEdge = createMemo(() => replaySnapshot()?.packetEdge ?? null)
+  const focusAgent = createMemo(() => replaySnapshot()?.focusAgent ?? null)
+
+  const [hoveredAgent, setHoveredAgent] = createSignal<AgentName | null>(null)
+  createEffect(() => {
+    if (!inReplay()) setHoveredAgent(null)
+  })
+
+  const inspectorBlock = createMemo<AuditBlock | null>(() => {
+    const steps = replayState.steps
+    if (steps.length === 0) return null
+    const hovered = hoveredAgent()
+    if (hovered) {
+      for (let i = Math.min(replayState.stepIndex, steps.length - 1); i >= 0; i--) {
+        const step = steps[i]!
+        const payload = (step.payload ?? {}) as Record<string, unknown>
+        if (step.action === 'agent_step' && String(payload.agent ?? '') === hovered) return step
+      }
+      return null
+    }
+    return steps[replayState.stepIndex] ?? null
+  })
+
+  // A brief tween (not SMIL) from the edge's source node to its target,
+  // restarted from a clean snapshot every time the replayed step advances —
+  // avoids cross-browser <animateMotion> restart quirks.
+  const [packetPos, setPacketPos] = createSignal<{ x: number; y: number } | null>(null)
+  createEffect(() => {
+    const edge = packetEdge()
+    replayState.stepIndex
+    if (!edge) {
+      setPacketPos(null)
+      return
+    }
+    const from = positions[edge.source]
+    const to = positions[edge.target]
+    if (!from || !to) {
+      setPacketPos(null)
+      return
+    }
+    const duration = 900 / replayState.speed
+    const start = performance.now()
+    let raf = requestAnimationFrame(function tick(now: number) {
+      const t = Math.min(1, (now - start) / duration)
+      setPacketPos({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t })
+      if (t < 1) raf = requestAnimationFrame(tick)
+    })
+    onCleanup(() => cancelAnimationFrame(raf))
+  })
+
+  function isPacketFocus(agent: AgentName): boolean {
+    if (!inReplay()) return false
+    const edge = packetEdge()
+    if (edge) return edge.source === agent || edge.target === agent
+    return focusAgent() === agent
+  }
+
   // Larger runs (PO -> Architect -> N domain agents -> Policy -> Lead Dev)
   // can have twice the classic pipeline's node count — shrink nodes to keep
   // them from overlapping rather than hardcoding a 4-node layout.
   const radius = createMemo(() => {
-    const n = swarm.state.stageOrder.length
+    const n = view().stageOrder.length
     if (n <= 4) return 30
     if (n <= 6) return 24
     return 20
@@ -108,15 +192,23 @@ export default function SwarmCanvas() {
   const badgeSize = createMemo(() => (radius() <= 22 ? 12 : 16))
 
   onMount(() => {
-    const disconnect = swarm.connect()
-    onCleanup(disconnect)
+    let disconnect: (() => void) | null = null
+    createEffect(() => {
+      if (inReplay()) {
+        disconnect?.()
+        disconnect = null
+      } else if (!disconnect) {
+        disconnect = swarm.connect()
+      }
+    })
+    onCleanup(() => disconnect?.())
   })
 
   onMount(() => {
     let stopLayout: (() => void) | null = null
 
     createEffect(() => {
-      const order = swarm.state.stageOrder
+      const order = view().stageOrder
       const anchors = computeAnchors(order)
 
       const initial: Record<AgentName, { x: number; y: number }> = {}
@@ -161,12 +253,58 @@ export default function SwarmCanvas() {
   })
 
   const showFeedbackArc = createMemo(
-    () => swarm.state.stageOrder.includes('Planner') && swarm.state.stageOrder.includes('Reviewer'),
+    () => view().stageOrder.includes('Planner') && view().stageOrder.includes('Reviewer'),
   )
 
   return (
     <section data-testid="swarm-canvas" class="w-full max-w-2xl rounded-lg border border-border bg-surface p-4 shadow-lg">
-      <h2 class="mb-2 text-left text-xs uppercase tracking-wide text-text-muted">Swarm</h2>
+      <div class="mb-2 flex items-center justify-between">
+        <h2 class="text-left text-xs uppercase tracking-wide text-text-muted">Swarm</h2>
+        <Show when={inReplay()}>
+          <span class="text-[10px] font-medium uppercase tracking-wide text-accent">Replay Mode</span>
+        </Show>
+      </div>
+
+      <Show when={inReplay()}>
+        <div class="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-accent/30 bg-accent/5 px-2 py-1.5 text-[11px]">
+          <span class="font-medium text-text">
+            Step {Math.max(replayState.stepIndex + 1, 0)} of {replayState.steps.length}
+          </span>
+          <button type="button" class="rounded border border-border px-1.5 py-0.5 hover:bg-surface-raised" onClick={() => stepBack()}>
+            ⏮ Back
+          </button>
+          <button type="button" class="rounded border border-border px-1.5 py-0.5 hover:bg-surface-raised" onClick={() => togglePlay()}>
+            {replayState.playing ? '⏸ Pause' : '▶ Play'}
+          </button>
+          <button type="button" class="rounded border border-border px-1.5 py-0.5 hover:bg-surface-raised" onClick={() => stepForward()}>
+            Forward ⏭
+          </button>
+          <div class="flex gap-1">
+            <button
+              type="button"
+              class={`rounded border px-1.5 py-0.5 ${replayState.speed === 1 ? 'border-accent text-accent' : 'border-border text-text-muted'}`}
+              onClick={() => setSpeed(1)}
+            >
+              1x
+            </button>
+            <button
+              type="button"
+              class={`rounded border px-1.5 py-0.5 ${replayState.speed === 2 ? 'border-accent text-accent' : 'border-border text-text-muted'}`}
+              onClick={() => setSpeed(2)}
+            >
+              2x
+            </button>
+          </div>
+          <button
+            type="button"
+            class="ml-auto rounded border border-red-400/40 px-1.5 py-0.5 text-red-400 hover:bg-red-400/10"
+            onClick={() => stopReplay()}
+          >
+            ✕ Exit
+          </button>
+        </div>
+      </Show>
+
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         class="h-auto w-full"
@@ -190,10 +328,10 @@ export default function SwarmCanvas() {
           />
         </Show>
 
-        <For each={swarm.state.stageOrder.slice(0, -1)}>
+        <For each={view().stageOrder.slice(0, -1)}>
           {(source, i) => {
-            const target = () => swarm.state.stageOrder[i() + 1]!
-            const isActive = () => swarm.state.edges[edgeKey(source, target())]
+            const target = () => view().stageOrder[i() + 1]!
+            const isActive = () => view().edges[edgeKey(source, target())]
             const from = () => positions[source]
             const to = () => positions[target()]
             return (
@@ -211,9 +349,13 @@ export default function SwarmCanvas() {
           }}
         </For>
 
-        <For each={swarm.state.stageOrder}>
+        <Show when={packetPos()}>
+          {(pos) => <circle cx={pos().x} cy={pos().y} r="5" class="fill-amber-300 drop-shadow-[0_0_5px_rgba(251,191,36,0.9)]" />}
+        </Show>
+
+        <For each={view().stageOrder}>
           {(agent) => {
-            const status = () => swarm.state.agents[agent]?.status ?? 'idle'
+            const status = () => view().agents[agent]?.status ?? 'idle'
             const pos = () => positions[agent]
             const isBusy = () => status() === 'active' || status() === 'thinking'
             const label = () => {
@@ -226,16 +368,29 @@ export default function SwarmCanvas() {
             const badgeOffset = () => radius() * 0.72
             return (
               <Show when={pos()}>
-                <g>
+                <g
+                  onPointerEnter={() => inReplay() && setHoveredAgent(agent)}
+                  onPointerLeave={() => setHoveredAgent((current) => (current === agent ? null : current))}
+                >
+                  <Show when={isPacketFocus(agent)}>
+                    <circle
+                      cx={pos()!.x}
+                      cy={pos()!.y}
+                      r={radius() + 6}
+                      fill="none"
+                      class="animate-pulse stroke-amber-400"
+                      stroke-width="2"
+                      stroke-dasharray="4 3"
+                    />
+                  </Show>
                   <circle
                     cx={pos()!.x}
                     cy={pos()!.y}
                     r={radius()}
-                    class={`fill-surface-raised transition-[stroke,filter] duration-300 ${STATUS_STROKE[status()]} ${
+                    class={`fill-surface-raised transition-[stroke,filter] duration-300 ${STATUS_STROKE[status()]} ${STATUS_GLOW_CLASS[status()]} ${
                       status() === 'thinking' ? 'animate-pulse' : ''
                     }`}
                     stroke-width={status() === 'idle' ? 1.5 : 2.5}
-                    style={STATUS_GLOW[status()] ? { filter: STATUS_GLOW[status()] } : undefined}
                   />
                   <text x={pos()!.x} y={pos()!.y + 4} text-anchor="middle" class="fill-text text-[10px] font-medium">
                     {agent}
@@ -277,6 +432,34 @@ export default function SwarmCanvas() {
           }}
         </For>
       </svg>
+
+      <Show when={inReplay()}>
+        <div class="mt-3 rounded-md border border-border/60 bg-bg px-3 py-2">
+          <div class="mb-1 flex items-center justify-between text-[10px] text-text-muted">
+            <span>Packet Inspector{hoveredAgent() ? ` — ${hoveredAgent()}` : ''}</span>
+            <Show when={hoveredAgent()}>
+              <button type="button" class="text-accent hover:underline" onClick={() => setHoveredAgent(null)}>
+                Back to current step
+              </button>
+            </Show>
+          </div>
+          <Show when={inspectorBlock()} fallback={<p class="text-[11px] text-text-muted">No step data for this run.</p>}>
+            {(block) => (
+              <>
+                <p class="mb-1 text-[11px] text-text">
+                  <span class="font-medium">{block().action}</span>{' '}
+                  <span class="text-text-muted">
+                    {new Date(block().timestamp).toLocaleTimeString(undefined, { hour12: false })}
+                  </span>
+                </p>
+                <pre class="max-h-24 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] text-text-muted">
+                  {JSON.stringify(block().payload, null, 2)}
+                </pre>
+              </>
+            )}
+          </Show>
+        </div>
+      </Show>
     </section>
   )
 }

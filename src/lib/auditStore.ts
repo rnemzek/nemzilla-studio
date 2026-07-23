@@ -20,6 +20,14 @@ export interface AuditState {
   connected: boolean
 }
 
+/**
+ * The subset of audit actions that represent a meaningful "step" of a
+ * pipeline run — shared by ArtifactsPanel.tsx's Agent Trace view and
+ * replayStore.ts's step scrubber, so both always agree on what counts as a
+ * step without maintaining two copies of this list.
+ */
+export const AGENT_TRACE_ACTIONS = new Set(['agent_step', 'policy_check', 'generated_app_payload', 'pipeline_completed'])
+
 export interface AuditStore {
   state: AuditState
   /** Opens a fresh SSE connection to /api/audit/stream. Returns a function to disconnect. */

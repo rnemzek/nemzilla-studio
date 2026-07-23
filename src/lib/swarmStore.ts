@@ -1,5 +1,6 @@
 import { createStore, produce, reconcile } from 'solid-js/store'
 import { apiClient } from './apiClient.ts'
+import type { AuditBlock } from './auditStore.ts'
 
 /**
  * Pass A: agent names are no longer restricted to the classic
@@ -39,7 +40,7 @@ export const DEFAULT_STAGE_ORDER: AgentName[] = ['Planner', 'Architect', 'Lead D
  * nodes (satisfies "pipeline resets and updates cleanly across multiple
  * runs" regardless of which pipeline — classic or swarm — just started).
  */
-const RUN_START_AGENTS = new Set(['Planner', 'PO'])
+export const RUN_START_AGENTS = new Set(['Planner', 'PO'])
 
 export function edgeKey(source: AgentName, target: AgentName): string {
   return `${source}->${target}`
@@ -69,7 +70,7 @@ function resetForNewRun(draft: SwarmState): void {
 }
 
 /** Adds `name` to the run if this is the first time it's been seen, wiring the incoming edge from whatever the previous stage was. */
-function ensureAgent(draft: SwarmState, name: AgentName): void {
+export function ensureAgent(draft: SwarmState, name: AgentName): void {
   if (!draft.agents[name]) draft.agents[name] = emptyAgentState()
   if (draft.stageOrder.includes(name)) return
 
@@ -95,6 +96,64 @@ function parseFrame(chunk: string): { event: string; data: Record<string, unknow
   } catch {
     return { event: '', data: {} }
   }
+}
+
+export interface ReplaySwarmSnapshot {
+  stageOrder: AgentName[]
+  agents: Record<AgentName, AgentState>
+  edges: Record<string, boolean>
+  /** The agent last touched by the step at `uptoIndex` — drives node/packet highlighting during replay. */
+  focusAgent: AgentName | null
+  /** Set only when the step at `uptoIndex` is a hand-off (agent_step EXECUTING with a predecessor) — the edge the packet animates along. */
+  packetEdge: { source: AgentName; target: AgentName } | null
+}
+
+/**
+ * Rebuilds swarm canvas state by folding a saved run's audit blocks up to
+ * (and including) `uptoIndex` — reusing `ensureAgent()`/`RUN_START_AGENTS`,
+ * the exact same reducer the live store's `dispatch()` uses for `agent_step`
+ * frames, so a replayed run renders identically to how it looked live
+ * instead of maintaining a second parallel state machine. Non-`agent_step`
+ * steps (policy_check, generated_app_payload, pipeline_completed) don't move
+ * the packet — they're inspector-only content layered on top of whichever
+ * agent was last active.
+ */
+export function buildReplaySnapshot(steps: AuditBlock[], uptoIndex: number): ReplaySwarmSnapshot {
+  const draft: SwarmState = { stageOrder: [], agents: {}, edges: {}, connected: false, message: null }
+  let focusAgent: AgentName | null = null
+  let packetEdge: { source: AgentName; target: AgentName } | null = null
+
+  const limit = Math.min(uptoIndex, steps.length - 1)
+  for (let i = 0; i <= limit; i++) {
+    const step = steps[i]!
+    if (step.action !== 'agent_step') continue
+    const payload = (step.payload ?? {}) as Record<string, unknown>
+    const agent = String(payload.agent ?? '')
+    if (!agent) continue
+
+    if (payload.state === 'EXECUTING' && RUN_START_AGENTS.has(agent)) resetForNewRun(draft)
+    ensureAgent(draft, agent)
+    focusAgent = agent
+    const idx = draft.stageOrder.indexOf(agent)
+
+    if (payload.state === 'EXECUTING') {
+      draft.agents[agent]!.status = 'active'
+      const prev = idx > 0 ? draft.stageOrder[idx - 1] : null
+      if (prev) {
+        draft.edges[edgeKey(prev, agent)] = true
+        packetEdge = { source: prev, target: agent }
+      } else {
+        packetEdge = null
+      }
+    } else if (payload.state === 'DONE') {
+      draft.agents[agent]!.status = 'completed'
+      packetEdge = null
+      const next = draft.stageOrder[idx + 1]
+      if (next) draft.edges[edgeKey(agent, next)] = false
+    }
+  }
+
+  return { stageOrder: draft.stageOrder, agents: draft.agents, edges: draft.edges, focusAgent, packetEdge }
 }
 
 export interface SwarmStore {

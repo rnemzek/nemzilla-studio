@@ -196,7 +196,7 @@ async function runPipeline(sessionId: string, prompt?: string): Promise<void> {
     if (isAborted(sessionId)) return
 
     if (agent === 'Lead Dev' && prompt && forbidden.allowed) {
-      const { scenario, code, policyCheck } = generateAppSnippet(prompt)
+      const { scenario, code, policyCheck } = generateAppSnippet(prompt, sessionId)
       if (policyCheck) {
         const policyEvent: Omit<PipelineEvent, 'sessionId'> = {
           name: 'policy_check',

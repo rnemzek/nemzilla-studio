@@ -638,6 +638,40 @@
   the way (a `:has-text("View")` selector substring-matching "Preview") — not a product bug.
 - **UOW-12 complete.** All 4 Pass A requirements shipped.
 
+### UOW-13 Sync — Pass B: The Step-by-Step Replay Scrubber — 2026-07-23
+- **Replay Mode Controller:** new `replayStore.ts` singleton (`run`/`steps`/`stepIndex`/`playing`/
+  `speed`) — `ArtifactsPanel.tsx`'s Run History tab gained "▶ Replay Current Run" (live, no Save Run
+  needed) and a per-row "▶ Replay", both setting the same global state `SwarmCanvas.tsx` reacts to.
+  Moved `AGENT_TRACE_ACTIONS` onto `auditStore.ts` as a shared export so the Agent Trace tab and the
+  replay step count always agree on what a "step" is.
+- **Visual Packet Trajectory:** `swarmStore.ts`'s new `buildReplaySnapshot()` reuses the *exact*
+  live reducer (`ensureAgent`/`RUN_START_AGENTS`) folded over a run's own audit blocks up to the
+  scrubbed index — no second parallel state machine. `SwarmCanvas.tsx` pauses its live spectate
+  connection while replaying, renders a Step X of Y scrubber (Back/Play·Pause/Forward, 1x/2x,
+  Exit), and tweens a small amber dot between each hand-off's nodes via `requestAnimationFrame`
+  (not SMIL `<animateMotion>` — sidesteps cross-browser restart quirks) with a pulsing ring on
+  whichever node(s) are in focus.
+- **Contextual Packet Inspector:** a panel shows the current step's action/timestamp/payload;
+  hovering a different node looks up that agent's own most recent step at-or-before the scrubbed
+  index instead.
+- **Runtime Policy Interceptor Visual:** new `policyTrajectoryStore.ts` drives a 3-stage bar in
+  `AppPreview.tsx` ("Cart Submitted" → "Policy Checked ($X · decision)" → "Audit Ledger Signed") off
+  the same `SANDBOX_MESSAGE.order` postMessage already relayed to `/api/orders/event`. Also extended
+  the classic ACME snippet (`appGeneratorPrompt.ts`) to post that same message — previously only a
+  PO-interview swarm build could demonstrate this at all; now the default boot demo can too, via the
+  classic pipeline's own builder-lock `sessionId` threaded through `generateAppSnippet()`.
+- **Real bug found and fixed, not new here:** `SwarmCanvas.tsx`'s node glow used inline
+  `style={{filter:...}}`, which production's CSP (`style-src 'self'`, no `unsafe-inline`) silently
+  drops — the glow had never actually rendered in production, despite earlier UOWs claiming "zero
+  console errors." Found via this UOW's own Playwright pass; fixed by moving to Tailwind
+  `drop-shadow-[...]` arbitrary-value classes for both the pre-existing glow and the new packet dot.
+- **Verification:** `tsc -b`/`build`/`test:sse` clean. Full production-mode Playwright pass:
+  boot-demo order flow renders the 3-stage trajectory correctly; Replay Current Run's banner, the
+  scrubber's every control, the packet dot landing precisely on hand-off steps (both endpoint nodes
+  ringed) and persisting through non-hand-off steps until the matching DONE, hover-driven inspector
+  updates, and Exit restoring live mode all confirmed — zero console errors after the CSP fix.
+- **UOW-13 complete.** All 4 Pass B requirements shipped, plus the CSP/inline-style fix.
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

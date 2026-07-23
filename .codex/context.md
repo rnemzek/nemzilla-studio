@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-14 - Pass C: Visitor Identity, Feedback Loops & Admin Session/Usage Drawer
-- **Active Task**: UOW-14 complete — ready for next UOW
+- **Current UOW**: UOW-15 - Brand Avatar Contrast & Swarm Canvas Badge Positioning Fix
+- **Active Task**: UOW-15 complete — ready for next UOW
 
 ---
 
@@ -578,4 +578,42 @@ UOW-12's note above instead, and is unrelated to this one.)_
       fires on an actual page reload (not normal operation), and the log lands in a page context
       already being torn down — flagged here rather than silently patched into an unrelated file.
 - **UOW-14 complete.** All 4 Pass C requirements shipped.
+
+## [x] UOW 15 - Brand Avatar Contrast & Swarm Canvas Badge Positioning Fix
+
+- [x] Task 15.1: **Brand Avatar Contrast.** `src/components/RnAvatar.tsx` now renders bold black
+      (`#000000`, weight 800) "RN" text over a vibrant, high-saturation orange `<linearGradient>`
+      (`#ff4500` → `#ff8c00` → `#ffa500`, diagonal) with a crisp black (`#000000`, width 2.5) border,
+      replacing the old flat `#f97316` fill with white text. Each instance mints its own
+      `<linearGradient>` id (`rn-avatar-gradient-N`) since this component renders many times per page
+      (header, every PO chat line, every Swarm node) and SVG ids are document-global.
+      `public/rn-avatar.svg`/`public/favicon.svg` (the static-file counterparts used for the browser
+      tab icon) updated to match.
+- [x] Task 15.2: **Swarm Canvas badge positioning — real bug found, not cosmetic.** Investigated the
+      reported "badges clumping/double-stacked under Reviewer" and found the true root cause:
+      `RnAvatar.tsx` destructured its props (`const { size, ...rest } = props`), which breaks
+      SolidJS's fine-grained reactivity — a destructured prop is read once, at mount, and never
+      again, since Solid components run once rather than re-rendering. Every SwarmCanvas badge
+      passes a *reactive* `x`/`y` (recomputed continuously as the force layout animates nodes into
+      place), so each badge was frozen forever at wherever its node happened to be the instant it
+      first mounted — and since a freshly-added agent is always appended as the *rightmost* node in
+      whatever `n`-node layout is current at that moment (`computeAnchors()`), and the rightmost
+      anchor's `x` is constant across all `n` (same `LAYOUT_MARGIN`/`WIDTH`), every node's badge froze
+      at approximately the same `x`, regardless of where that node later settled — exactly the
+      "clumping near Reviewer" symptom. Fixed with `splitProps` (Solid's reactivity-preserving
+      alternative to destructuring). Confirmed via direct SVG-attribute inspection (not just
+      screenshots) that badge coordinates now track their own node's position 1:1 before and after
+      the fix. Also moved badge rendering out of each node's own `<g>` into a single dedicated
+      `<For>` pass after all nodes render, and switched the corner offset from an approximated
+      `radius * 0.72` to the exact trig value (`radius * Math.SQRT1_2`, sitting precisely on the
+      circle's edge at 45°) with `pointer-events-none` so the badge never steals the node's own hover
+      handlers (Replay Mode's Packet Inspector) — defensive improvements on top of the real fix, not
+      the fix itself.
+- **Verification:** `npx tsc -b`/`npm run build`/`npm run test:sse` all clean. Production-mode
+      Playwright verification, including a from-scratch root-cause investigation: confirmed via raw
+      SVG attribute dumps (not just visual screenshots) that before the fix, 3 of 4 badges in the
+      default boot demo clustered within ~20 units of each other despite their nodes being correctly,
+      visibly spaced across the canvas; after the fix, every badge's offset from its own node is
+      consistent (~13 units, matching `radius * Math.SQRT1_2 - badgeSize/2` for radius=30/badgeSize=16)
+      and screenshots confirm exactly one crisp, correctly-positioned badge per node.
 

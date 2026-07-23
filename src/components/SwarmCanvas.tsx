@@ -365,7 +365,6 @@ export default function SwarmCanvas() {
               if (isBusy()) return microStatusFor(agent)
               return roleFor(agent)
             }
-            const badgeOffset = () => radius() * 0.72
             return (
               <Show when={pos()}>
                 <g
@@ -395,13 +394,6 @@ export default function SwarmCanvas() {
                   <text x={pos()!.x} y={pos()!.y + 4} text-anchor="middle" class="fill-text text-[10px] font-medium">
                     {agent}
                   </text>
-                  <RnAvatar
-                    x={pos()!.x + badgeOffset() - badgeSize() / 2}
-                    y={pos()!.y + badgeOffset() - badgeSize() / 2}
-                    width={badgeSize()}
-                    height={badgeSize()}
-                    class="drop-shadow-sm"
-                  />
 
                   <Show
                     when={isBusy()}
@@ -427,6 +419,40 @@ export default function SwarmCanvas() {
                     </g>
                   </Show>
                 </g>
+              </Show>
+            )
+          }}
+        </For>
+
+        {/*
+          Rendered as its own pass, after every node's circle/label/status
+          badge, rather than nested inside each node's own <g> above. SVG
+          paints strictly in DOM order — when badges lived inside each
+          node's <g>, a node positioned close to its neighbor (routine in
+          the denser 6-8 node swarm layouts) would have its badge painted
+          OVER by the next node's own opaque circle, reading as badges
+          "clumping" under the wrong node or vanishing. A dedicated
+          top-level pass guarantees every badge paints above every node
+          regardless of layout spacing. `pointer-events-none` keeps the
+          badge from stealing the hover events the node's own <g> registers
+          for Replay Mode's Packet Inspector.
+        */}
+        <For each={view().stageOrder}>
+          {(agent) => {
+            const pos = () => positions[agent]
+            // On the node circle's own edge at a fixed 45° — scales with
+            // radius exactly (not an approximated multiplier), so the badge
+            // sits consistently at the boundary regardless of node size.
+            const badgeOffset = () => radius() * Math.SQRT1_2
+            return (
+              <Show when={pos()}>
+                <RnAvatar
+                  x={pos()!.x + badgeOffset() - badgeSize() / 2}
+                  y={pos()!.y + badgeOffset() - badgeSize() / 2}
+                  width={badgeSize()}
+                  height={badgeSize()}
+                  class="pointer-events-none drop-shadow-sm"
+                />
               </Show>
             )
           }}

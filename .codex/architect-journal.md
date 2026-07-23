@@ -706,6 +706,26 @@
   fires on an actual reload, logged in a page context already being torn down.
 - **UOW-14 complete.** All 4 Pass C requirements shipped.
 
+### UOW-15 Sync — Brand Avatar Contrast & Swarm Canvas Badge Positioning Fix — 2026-07-23
+- **Contrast:** `RnAvatar.tsx` now uses a vibrant orange gradient + bold black text + a crisp black
+  border, replacing the old flat-orange/white-text version. Static `public/rn-avatar.svg`/
+  `favicon.svg` updated to match.
+- **The real bug behind "badges clumping under Reviewer":** not a z-order/layout issue as first
+  suspected — `RnAvatar.tsx` destructured its props (`const { size, ...rest } = props`), which
+  silently breaks SolidJS reactivity (Solid components run once; destructuring reads a prop's value
+  at that moment and never again). Every SwarmCanvas badge receives a reactive `x`/`y` that the force
+  layout keeps animating, so each badge froze at wherever its node was the instant it first mounted —
+  and since a newly-added agent always starts as the rightmost node in whatever `n`-node layout is
+  current, and the rightmost anchor's `x` is constant across every `n`, every badge froze at
+  approximately the same spot regardless of where its own node later settled. Fixed with `splitProps`
+  (Solid's reactivity-preserving alternative to destructuring) — confirmed via raw SVG attribute
+  dumps, not just screenshots, that badges now track their own node 1:1. Also moved badge rendering
+  to a dedicated top-level `<For>` pass (after all nodes) with an exact trig-based edge offset and
+  `pointer-events-none`, as defensive polish on top of the actual fix.
+- **Verification:** `tsc -b`/`build`/`test:sse` clean; before/after coordinate inspection confirmed
+  the fix, and screenshots show one correctly-positioned badge per node.
+- **UOW-15 complete.**
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

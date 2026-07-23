@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-15 - Brand Avatar Contrast & Swarm Canvas Badge Positioning Fix
-- **Active Task**: UOW-15 complete — ready for next UOW
+- **Current UOW**: UOW-16 - Pass D: AgentZ CLI Rebrand, Guided Onboarding & App Preview Polish
+- **Active Task**: UOW-16 complete — ready for next UOW
 
 ---
 
@@ -616,4 +616,62 @@ UOW-12's note above instead, and is unrelated to this one.)_
       visibly spaced across the canvas; after the fix, every badge's offset from its own node is
       consistent (~13 units, matching `radius * Math.SQRT1_2 - badgeSize/2` for radius=30/badgeSize=16)
       and screenshots confirm exactly one crisp, correctly-positioned badge per node.
+
+## [x] UOW 16 - Pass D: AgentZ CLI Rebrand, Guided Onboarding & App Preview Polish
+
+- [x] Task 16.1: **Rebrand & AI-First Terminal Experience.** `Terminal.tsx`'s header now reads
+      "AgentZ CLI" (was "nemzilla-cli"). The static welcome text was replaced with a reactive
+      greeting reading `visitorState.identity?.handle` (visitorStore.ts, Pass C) —
+      "Welcome, {persona}! What would you like to build today?" — so it updates automatically once
+      the async persona hash resolves and again if the visitor edits their handle. Command routing
+      was redesigned around a `/`-prefix: `terminalCommands.ts`'s `runCommand()` now checks
+      `trimmed.startsWith('/')` first (dispatching to a `SLASH_COMMANDS`-driven switch covering
+      `/help /build /andiamo /replay /reset /run /triad /metrics /launch /admin /clear`) and
+      otherwise treats *all* free text as a conversational turn to the AI PO — no more "command not
+      found" for a stray word, and no more special-cased plain-text "cancel"/"help"/"clear"
+      interception mid-interview (those all moved behind explicit slash commands, checked before the
+      interview-continuation branch, so they always work regardless of interview state).
+      `Terminal.tsx` gained a context-sensitive slash palette (shown while typing a command name, not
+      yet args — filters `SLASH_COMMANDS` live, Arrow keys navigate, Enter/Tab/click complete,
+      Escape clears) and switched the input from a single-line `<input>` to an auto-growing
+      `<textarea>` supporting `Shift+Enter` for multi-line input (plain `Enter` still submits;
+      history recall via bare ArrowUp/Down is skipped once the text contains a newline, letting the
+      browser's native cursor movement take over instead).
+- [x] Task 16.2: **"5th-Grade Summary" & Guided Flow.** New `src/components/GuidedWorkflowBanner.tsx`
+      — a collapsible banner mounted in `App.tsx` above `<SwarmCanvas/>` explaining the platform in
+      one sentence plus a 1-2-3 step guide (terminal → Swarm Canvas → App Preview), collapse state
+      persisted to `localStorage` so a visitor who's already dismissed it isn't shown it again.
+      **Window controls fix:** `Terminal.tsx`'s red/yellow/green header dots are real buttons now —
+      red resets the session (equivalent to typing `/reset`), yellow minimizes the terminal to just
+      its header bar, green expands the scrollable output area's max height — rather than looking
+      clickable while doing nothing.
+- [x] Task 16.3: **App Preview Fixes & Cart Management.** `AppPreview.tsx`'s tab/status header row
+      gained `flex-wrap` + `shrink-0` on the status badge and Save-to-Cookbook button group (the same
+      established pattern `EcosystemNav.tsx` already uses for its own header, UOW-10 Task 10.3) — on
+      a narrow column (this panel lives in a 3-up grid, so its real rendered width is well under its
+      own `max-w-2xl`), the row now wraps onto a second line instead of the status badge clipping
+      past the visible edge. Both order-entry app templates — `appGeneratorPrompt.ts`'s
+      `buildAcmeOrderSnippet` (the default ACME boot demo) and `swarmCodeSynthesizer.ts`'s
+      `synthesizeOrderEntryApp` (the PO-interview-driven swarm build) — gained a "Remove" button per
+      cart line and a "Clear Cart" button next to Submit Order, so a visitor can freely add/remove
+      items to test different totals against the policy interceptor's auto-approve/HITL/auto-deny
+      bands without reloading the whole app.
+- **Consequence fix (not asked, but required by 16.1):** the `run-nemzilla-studio` skill's
+      `driver.mjs`/`SKILL.md` used bare commands (`help`, `metrics`, `triad`, `clear`) and an
+      `input[type="text"]` selector — both now broken by the slash-command rework (bare commands
+      would silently route to the real, billed AI PO instead of running; the input is a `<textarea>`
+      now, not an `<input>`). Updated the driver's `DEFAULT_COMMANDS`/selector/wait-text and the
+      SKILL.md command table to match, and added an explicit warning that only `/`-prefixed input is
+      a command now.
+- **Verification:** `npx tsc -b`/`npm run build`/`npm run test:sse` all clean. Full production-mode
+      Playwright pass confirmed: the rebrand text, a real generated persona in the dynamic greeting,
+      the guided banner's visibility/collapse/localStorage-persistence-across-reload, the slash
+      palette's filtering and Enter-to-complete behavior, genuine multi-line textarea input via
+      Shift+Enter, all three window controls (minimize hides the body, restore brings it back, expand
+      changes the max-height), free text starting a real AI PO conversation, the reset button
+      clearing it, no header-row overflow at a narrow (900px) viewport, and the ACME demo's cart
+      Remove/Clear buttons actually removing/clearing line items. One console message
+      (`audit stream error`) appeared only during the test's own `page.reload()` step — the same
+      pre-existing, unrelated `auditStore.ts` behavior already root-caused and documented in UOW-15.
+- **UOW-16 complete.** All 3 Pass D requirement areas shipped.
 

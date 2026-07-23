@@ -726,6 +726,32 @@
   the fix, and screenshots show one correctly-positioned badge per node.
 - **UOW-15 complete.**
 
+### UOW-16 Sync — Pass D: AgentZ CLI Rebrand, Guided Onboarding & App Preview Polish — 2026-07-23
+- **AgentZ CLI rebrand + AI-first routing:** `Terminal.tsx`'s header/greeting rebranded, and
+  `terminalCommands.ts`'s routing model flipped — `/`-prefixed input is now the *only* way to invoke
+  a command (`SLASH_COMMANDS`-driven: help/build/andiamo/replay/reset/run/triad/metrics/launch/
+  admin/clear); every other line of free text goes straight to the AI PO, unconditionally, with no
+  more "command not found" for a stray word and no more special-cased plain-text cancel/help/clear
+  interception mid-interview.
+- **Slash palette + multiline input:** `Terminal.tsx` shows a live-filtered command palette while
+  typing a command name (Arrow/Enter/Tab/Escape), and its input is now an auto-growing `<textarea>`
+  supporting `Shift+Enter` for real multi-line messages.
+- **Guided onboarding + working window controls:** new `GuidedWorkflowBanner.tsx` (collapsible,
+  persisted) explains the platform in one line plus a 1-2-3 step guide. The terminal's red/yellow/
+  green header dots are real buttons now (reset/minimize/expand), not decorative.
+- **App Preview polish:** fixed a real header-row overflow (narrow-column tab bar clipping the
+  status badge — same `flex-wrap`/`shrink-0` fix pattern already used in `EcosystemNav.tsx`), and
+  added per-item Remove + Clear Cart to both order-entry app templates (the ACME demo and the
+  swarm-synthesized app) so visitors can freely test different totals against the policy
+  interceptor.
+- **Consequence fix:** updated the `run-nemzilla-studio` skill's driver/SKILL.md, since its bare
+  smoke-test commands and `input[type="text"]` selector were both broken by the slash-command
+  rework and the input's switch to a `<textarea>`.
+- **Verification:** `tsc -b`/`build`/`test:sse` clean; full production-mode Playwright pass covering
+  every Pass D behavior, one pre-existing/unrelated console message during a `page.reload()` step
+  (already root-caused in UOW-15).
+- **UOW-16 complete.** All 3 Pass D requirement areas shipped.
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

@@ -2,8 +2,11 @@ import { apiClient } from './apiClient.ts'
 import { startPoInterview, submitPoAnswer, SYSTEM_ORDER_CEILING, type PoInterviewState } from './poInterview.ts'
 import { getSessionBundle, putSessionArtifact, type SessionBundle } from './sessionBundleClient.ts'
 import { sandboxStore } from './sandboxStore.ts'
-import { publishInterviewSnapshot } from './interviewStore.ts'
+import { publishInterviewSnapshot, interviewState } from './interviewStore.ts'
 import { openAdminDrawer } from './adminDrawerStore.ts'
+import { auditStore } from './auditStore.ts'
+import { startReplay, stopReplay } from './replayStore.ts'
+import type { SavedRunCatalog, SavedRunPolicyRules } from './runHistoryStore.ts'
 
 export type OutputKind = 'input' | 'output' | 'error' | 'system' | 'po'
 
@@ -12,7 +15,31 @@ export interface CommandContext {
   clear: () => void
 }
 
-export const COMMANDS = ['help', 'run', 'triad', 'metrics', 'clear', 'launch', 'build', 'andiamo', 'admin', 'sessions'] as const
+/**
+ * Pass D: commands are now `/`-prefixed — free text (no leading slash)
+ * always routes straight to the AI PO conversational stream instead of
+ * being parsed as a shell command. This list backs both `/help`'s output and
+ * Terminal.tsx's inline slash-command palette, so the two can never drift.
+ */
+export interface SlashCommandInfo {
+  name: string
+  usage: string
+  description: string
+}
+
+export const SLASH_COMMANDS: SlashCommandInfo[] = [
+  { name: 'build', usage: '/build', description: 'Start (or restart) the AI PO discovery interview.' },
+  { name: 'andiamo', usage: '/andiamo', description: 'Launch the swarm build from a completed interview.' },
+  { name: 'replay', usage: '/replay', description: 'Replay the current session step-by-step on the Swarm Canvas.' },
+  { name: 'reset', usage: '/reset', description: 'Cancel any active interview and clear the terminal.' },
+  { name: 'run', usage: '/run [task]', description: 'Stream the full agent pipeline, verbose.' },
+  { name: 'triad', usage: '/triad [task]', description: 'Condensed agent pipeline status pass.' },
+  { name: 'metrics', usage: '/metrics', description: 'Query /api/health for live status and latency.' },
+  { name: 'launch', usage: '/launch [target]', description: 'Open an ecosystem link (robert, streaming, grid).' },
+  { name: 'admin', usage: '/admin', description: 'Open the Usage & Session Drawer.' },
+  { name: 'clear', usage: '/clear', description: 'Clear the terminal output.' },
+  { name: 'help', usage: '/help', description: 'Show this list of commands.' },
+]
 
 const LAUNCH_TARGETS: Record<string, string> = {
   robert: 'https://robert.nemzilla.net',
@@ -21,21 +48,14 @@ const LAUNCH_TARGETS: Record<string, string> = {
 }
 
 const HELP_TEXT = [
-  'Available commands:',
-  '  help              Show this list of commands.',
-  '  run [task]        Stream a full agent pipeline run (Planner -> Architect -> Lead Dev -> Reviewer).',
-  '  triad             Condensed status pass over the agent pipeline (no reasoning text).',
-  '  metrics           Query /api/health for live status, uptime, and round-trip latency.',
-  '  launch [target]   Open an ecosystem link (robert, streaming, grid) or list targets.',
-  '  build             Start the AI PO discovery interview (vendor name, catalog, HITL threshold).',
-  '  clear             Clear the terminal output.',
+  'Just type what you want to build — free text always goes straight to the AI PO.',
   '',
-  'Tip: typing a full sentence instead of a command (e.g. "I want to build an',
-  'order entry app for my bakery") starts the AI PO interview automatically.',
+  'Slash commands (type "/" to see this list inline as you type):',
+  ...SLASH_COMMANDS.map((c) => `  ${c.usage.padEnd(18)}${c.description}`),
   '',
-  'Once the AI PO confirms it has everything it needs, click the "Build"',
-  'button or just say so — "build it", "go", "looks good", and "make the',
-  'app" all launch the swarm build into App Preview.',
+  'Once the AI PO confirms it has everything it needs, click "Build" or just',
+  'say so — "build it", "go", "looks good", and "make the app" all launch the',
+  'swarm build into App Preview.',
 ]
 
 function parseFrame(chunk: string): { event: string; data: Record<string, unknown> } {
@@ -141,11 +161,10 @@ function printPo(ctx: CommandContext, message: string) {
 }
 
 /**
- * Starts a fresh interview. `openingMessage`, when given, is real user text
- * that failed to match any known command (the CLI fallback in runCommand())
- * — it becomes the first real turn of the conversation instead of being
- * discarded, so a sentence like "I want to build an order entry app for my
- * bakery" isn't wasted on a "command not found" error.
+ * Starts a fresh interview. `openingMessage`, when given, is the user's own
+ * free text (Pass D: *all* free text routes here when no interview is
+ * active) — it becomes the first real turn of the conversation instead of
+ * being discarded.
  */
 async function startInterview(ctx: CommandContext, openingMessage?: string): Promise<void> {
   const step = await startPoInterview(openingMessage)
@@ -170,20 +189,10 @@ async function persistInterviewArtifacts(state: PoInterviewState): Promise<void>
 }
 
 /**
- * Meta-commands intercepted locally, for free, before ever reaching the LLM
- * — "help" or "clear" typed mid-interview must never be sent to the model
- * as if they were an answer (the old FSM's exact failure mode: it would
- * have literally set e.g. vendorName = "help"). Genuine natural-language
- * questions or off-topic remarks are NOT intercepted here — handling those
- * gracefully is the model's job now, not a fixed keyword list's.
- */
-const INTERVIEW_META_COMMANDS = new Set(['cancel', 'exit', 'quit'])
-
-/**
  * Pass A: natural, conversational ways to launch the swarm build once the
  * interview is done — replaces the old hard requirement to type the secret
- * word "andiamo". `andiamo` still works (see runAndiamo/runCommand's switch
- * case below); it's just no longer the only or advertised way in.
+ * word "andiamo". `/andiamo` still works as an explicit slash command too;
+ * this set is what lets *free text* like "build it"/"go" also trigger it.
  */
 const LAUNCH_TRIGGER_PHRASES = new Set([
   'andiamo',
@@ -208,25 +217,15 @@ function isLaunchTrigger(rawInput: string): boolean {
   return LAUNCH_TRIGGER_PHRASES.has(rawInput.trim().toLowerCase())
 }
 
+/**
+ * Pass D: free text is unconditional now — no more meta-command interception
+ * for "cancel"/"help"/"clear" mid-interview (those all move to explicit
+ * slash commands, checked in runCommand() *before* this is ever reached).
+ * Every line the user types while an interview is active is a genuine
+ * conversational turn sent straight to the AI PO.
+ */
 async function continueInterview(ctx: CommandContext, rawInput: string): Promise<void> {
   const state = activeInterview!
-  const lower = rawInput.toLowerCase()
-
-  if (INTERVIEW_META_COMMANDS.has(lower)) {
-    printPo(ctx, 'Interview cancelled.')
-    activeInterview = null
-    publishInterviewSnapshot(null)
-    return
-  }
-  if (lower === 'help') {
-    HELP_TEXT.forEach((line) => ctx.print(line, 'output'))
-    return
-  }
-  if (lower === 'clear') {
-    ctx.clear()
-    return
-  }
-
   const step = await submitPoAnswer(state, rawInput)
   publishInterviewSnapshot(state)
   printPo(ctx, step.reply)
@@ -248,7 +247,7 @@ function summarizeBundle(ctx: CommandContext, sessionId: string, bundle: Session
 
 async function runAndiamo(ctx: CommandContext): Promise<void> {
   if (!activeInterview || !activeInterview.done) {
-    ctx.print('No completed discovery interview yet — type "build" to start one.', 'error')
+    ctx.print('No completed discovery interview yet — just tell me what you want to build.', 'error')
     return
   }
 
@@ -272,7 +271,7 @@ async function runAndiamo(ctx: CommandContext): Promise<void> {
 function runLaunch(ctx: CommandContext, target?: string) {
   if (!target) {
     ctx.print(`Ecosystem targets: ${Object.keys(LAUNCH_TARGETS).join(', ')}`, 'output')
-    ctx.print('Usage: launch <target>', 'output')
+    ctx.print('Usage: /launch <target>', 'output')
     return
   }
 
@@ -286,31 +285,52 @@ function runLaunch(ctx: CommandContext, target?: string) {
   ctx.print(`launching ${url} ...`, 'system')
 }
 
-export async function runCommand(rawInput: string, ctx: CommandContext): Promise<void> {
-  const trimmed = rawInput.trim()
-  if (!trimmed) return
-
-  // While an interview is in progress, every line is an answer to the AI PO
-  // (or a meta-command like "cancel"/"help"/"clear") rather than a shell
-  // command — a chat interface, not a command dispatcher, until the
-  // interview is done.
-  if (activeInterview && !activeInterview.done) {
-    await continueInterview(ctx, trimmed)
+/**
+ * Pass D: `/replay` — builds an ephemeral, `SavedRun`-shaped snapshot of
+ * whatever's currently live (mirrors ArtifactsPanel.tsx's "Replay Current
+ * Run" button, which reads the exact same three reactive sources) and hands
+ * it to replayStore.ts. SwarmCanvas.tsx picks it up immediately since
+ * `replayState` is a shared singleton — no round trip through this module.
+ */
+function runReplay(ctx: CommandContext): void {
+  const auditBlocks = auditStore.state.blocks
+  if (auditBlocks.length === 0) {
+    ctx.print('Nothing to replay yet — build something first.', 'error')
     return
   }
 
-  // Pass A: once the interview is done, a natural launch phrase ("build it",
-  // "go", "looks good", the still-supported "andiamo", ...) starts the swarm
-  // build — checked here, before the switch below, so it takes priority over
-  // e.g. the literal `build` case, which would otherwise start a *second*,
-  // unrelated interview and discard the completed one.
-  if (activeInterview?.done && isLaunchTrigger(trimmed)) {
-    await runAndiamo(ctx)
-    return
-  }
+  const live = interviewState.interview
+  const catalog: SavedRunCatalog | null = live?.vendorName && live.catalog ? { vendorName: live.vendorName, items: live.catalog } : null
+  const policyRules: SavedRunPolicyRules | null =
+    live?.hitlThreshold != null
+      ? { hitlThreshold: live.hitlThreshold, autoApproveThreshold: live.hitlThreshold, autoDenyThreshold: SYSTEM_ORDER_CEILING }
+      : null
 
-  const [name, ...args] = trimmed.split(/\s+/)
-  const command = name!.toLowerCase()
+  startReplay({
+    id: 'live-session',
+    name: 'Current Session (live)',
+    createdAt: new Date().toISOString(),
+    transcript: live?.transcript ?? [],
+    catalog,
+    policyRules,
+    auditBlocks,
+    code: sandboxStore.state.code,
+  })
+  ctx.print('Replay started — see the Step X of Y scrubber on the Swarm Canvas above.', 'system')
+}
+
+/** Pass D: `/reset` — cancels any active interview, exits Replay Mode if active, and clears the terminal for a fresh start. */
+function runReset(ctx: CommandContext): void {
+  activeInterview = null
+  publishInterviewSnapshot(null)
+  stopReplay()
+  ctx.clear()
+  ctx.print('Session reset. What would you like to build?', 'system')
+}
+
+async function runSlashCommand(ctx: CommandContext, rawInput: string): Promise<void> {
+  const [name, ...args] = rawInput.slice(1).split(/\s+/)
+  const command = (name ?? '').toLowerCase()
 
   switch (command) {
     case 'help':
@@ -332,7 +352,11 @@ export async function runCommand(rawInput: string, ctx: CommandContext): Promise
       runLaunch(ctx, args[0])
       break
     case 'build':
-      await startInterview(ctx)
+      if (activeInterview && !activeInterview.done) {
+        ctx.print('A discovery interview is already in progress — answer above, or type "/reset" to start over.', 'error')
+      } else {
+        await startInterview(ctx)
+      }
       break
     case 'andiamo':
       await runAndiamo(ctx)
@@ -342,16 +366,47 @@ export async function runCommand(rawInput: string, ctx: CommandContext): Promise
       openAdminDrawer()
       ctx.print('Opening the Usage & Session Drawer…', 'system')
       break
+    case 'replay':
+      runReplay(ctx)
+      break
+    case 'reset':
+      runReset(ctx)
+      break
+    case '':
+      HELP_TEXT.forEach((line) => ctx.print(line, 'output'))
+      break
     default:
-      // UOW-13 CLI fallback: a genuinely unparsed *multi-word* string reads
-      // as a natural-language request, not a mistyped command — start the
-      // AI PO interview with it as the opening turn instead of erroring.
-      // A single unrecognized word stays a plain error (cheap typos
-      // shouldn't silently trigger a billed LLM call).
-      if (args.length > 0) {
-        await startInterview(ctx, trimmed)
-      } else {
-        ctx.print(`command not found: ${command} (type "help" for a list)`, 'error')
-      }
+      ctx.print(`unknown command: /${command} (type "/help" for a list, or "/" to see the palette)`, 'error')
   }
+}
+
+/**
+ * Pass D: the CLI's routing model is now simple and unconditional —
+ * anything starting with "/" is a command; everything else is free text
+ * that always goes to the AI PO conversational stream (starting a fresh
+ * interview if none is active, continuing one if it's in progress, or
+ * launching the swarm build if it's done and the text is a launch phrase).
+ * There is no more "command not found" for a plain word — that's the whole
+ * point of moving commands behind "/".
+ */
+export async function runCommand(rawInput: string, ctx: CommandContext): Promise<void> {
+  const trimmed = rawInput.trim()
+  if (!trimmed) return
+
+  if (trimmed.startsWith('/')) {
+    await runSlashCommand(ctx, trimmed)
+    return
+  }
+
+  if (activeInterview && !activeInterview.done) {
+    await continueInterview(ctx, trimmed)
+    return
+  }
+
+  if (activeInterview?.done && isLaunchTrigger(trimmed)) {
+    await runAndiamo(ctx)
+    return
+  }
+
+  await startInterview(ctx, trimmed)
 }

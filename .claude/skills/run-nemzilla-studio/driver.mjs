@@ -4,8 +4,8 @@
 // types terminal commands, and screenshots each step. See SKILL.md.
 //
 // Usage:
-//   node driver.mjs                        # default smoke scenario
-//   node driver.mjs help metrics triad      # run these nemzilla-cli commands in order
+//   node driver.mjs                          # default smoke scenario
+//   node driver.mjs /metrics /triad /clear   # run these AgentZ CLI slash commands in order
 //
 // Env:
 //   PORT       port for the throwaway dev server (default 5301)
@@ -23,9 +23,9 @@ const SCREENSHOT_DIR = path.join(__dirname, 'screenshots')
 const PORT = Number(process.env.PORT ?? 5301)
 const BASE_URL = `http://127.0.0.1:${PORT}`
 
-const DEFAULT_COMMANDS = ['help', 'metrics', 'triad', 'clear']
+const DEFAULT_COMMANDS = ['/help', '/metrics', '/triad', '/clear']
 // Commands that stream the agent pipeline need longer than a plain command.
-const STREAMING_COMMANDS = new Set(['run', 'triad'])
+const STREAMING_COMMANDS = new Set(['/run', '/triad'])
 
 mkdirSync(SCREENSHOT_DIR, { recursive: true })
 
@@ -79,13 +79,13 @@ async function main() {
     page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`))
 
     await page.goto(BASE_URL, { waitUntil: 'networkidle' })
-    await page.waitForSelector('text=nemzilla-cli')
+    await page.waitForSelector('text=AgentZ CLI')
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, '00-initial.png') })
     console.log('[00] initial load')
     const terminal = page.locator('[data-testid="terminal"]')
     console.log(await terminal.innerText())
 
-    const input = page.locator('input[type="text"]')
+    const input = page.locator('[data-testid="terminal"] textarea')
 
     for (const [i, command] of script.entries()) {
       const step = String(i + 1).padStart(2, '0')
@@ -93,7 +93,7 @@ async function main() {
       await input.press('Enter')
       const [name] = command.split(/\s+/)
       await page.waitForTimeout(STREAMING_COMMANDS.has(name) ? 2500 : 300)
-      const shotPath = path.join(SCREENSHOT_DIR, `${step}-${name}.png`)
+      const shotPath = path.join(SCREENSHOT_DIR, `${step}-${name.replace(/^\//, '')}.png`)
       await page.screenshot({ path: shotPath })
       console.log(`\n[${step}] $ ${command}  ->  ${shotPath}`)
       console.log(await terminal.innerText())

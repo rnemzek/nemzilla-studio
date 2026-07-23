@@ -58,9 +58,14 @@ export function synthesizeOrderEntryApp(
         <span class="text-sm text-slate-400">Total</span>
         <span id="total" class="text-lg font-semibold">$0.00</span>
       </div>
-      <button id="submit" class="mt-4 w-full rounded-md bg-emerald-500 px-4 py-2 font-medium text-slate-950 hover:bg-emerald-400">
-        Submit Order
-      </button>
+      <div class="mt-4 flex gap-2">
+        <button id="submit" class="flex-1 rounded-md bg-emerald-500 px-4 py-2 font-medium text-slate-950 hover:bg-emerald-400">
+          Submit Order
+        </button>
+        <button id="clear-cart" class="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 hover:border-red-500/50 hover:text-red-300">
+          Clear Cart
+        </button>
+      </div>
     </div>
 
     <div id="hitl" class="mt-4 hidden rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
@@ -110,10 +115,23 @@ export function synthesizeOrderEntryApp(
   function renderCart() {
     var list = document.getElementById('cart')
     list.innerHTML = cart.length
-      ? cart.map(function (p) { return '<li class="flex justify-between"><span>' + p.name + '</span><span>$' + p.price.toFixed(2) + '</span></li>' }).join('')
+      ? cart.map(function (p, i) {
+          return '<li class="flex items-center justify-between gap-2">' +
+            '<span>' + p.name + '</span>' +
+            '<span class="flex items-center gap-2">' +
+              '<span>$' + p.price.toFixed(2) + '</span>' +
+              '<button data-index="' + i + '" class="remove-btn text-xs text-red-400 hover:text-red-300">Remove</button>' +
+            '</span></li>'
+        }).join('')
       : '<li class="text-slate-500">No items yet — add something from the catalog.</li>'
     var total = cart.reduce(function (sum, p) { return sum + p.price }, 0)
     document.getElementById('total').textContent = '$' + total.toFixed(2)
+    Array.prototype.forEach.call(list.querySelectorAll('.remove-btn'), function (btn) {
+      btn.addEventListener('click', function () {
+        cart.splice(Number(btn.dataset.index), 1)
+        renderCart()
+      })
+    })
   }
 
   function notify(message) {
@@ -143,6 +161,11 @@ export function synthesizeOrderEntryApp(
       notify('Policy: total $' + total.toFixed(2) + ' > $' + DENY_CEILING + ' — auto-denied.')
       postOrderEvent('auto_denied', total)
     }
+  })
+
+  document.getElementById('clear-cart').addEventListener('click', function () {
+    cart = []
+    renderCart()
   })
 
   document.getElementById('approve').addEventListener('click', function () {

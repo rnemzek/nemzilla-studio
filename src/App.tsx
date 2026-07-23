@@ -4,6 +4,7 @@ import EcosystemNav from './components/EcosystemNav.tsx'
 import AppPreview from './components/AppPreview.tsx'
 import AuditLedgerPanel from './components/AuditLedgerPanel.tsx'
 import AdminDrawer from './components/AdminDrawer.tsx'
+import GuidedWorkflowBanner from './components/GuidedWorkflowBanner.tsx'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
             AI Command &amp; Control Platform — scaffolding online.
           </p>
         </div>
+        <GuidedWorkflowBanner />
         <SwarmCanvas />
         <div class="grid w-full max-w-7xl grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
           <Terminal />

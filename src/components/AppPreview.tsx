@@ -38,13 +38,13 @@ export default function AppPreview() {
       data-testid="app-preview"
       class="w-full max-w-2xl rounded-lg border border-border bg-surface text-left shadow-lg"
     >
-      <div class="flex items-center justify-between border-b border-border px-4 py-2">
-        <div class="flex gap-1">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+        <div class="flex flex-wrap gap-1">
           <For each={TABS}>
             {(tab) => (
               <button
                 type="button"
-                class={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                class={`whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                   sandbox.state.tab === tab.id
                     ? 'bg-surface-raised text-text'
                     : 'text-text-muted hover:text-text'
@@ -56,11 +56,11 @@ export default function AppPreview() {
             )}
           </For>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           <Show when={sandbox.state.status === 'ready'}>
             <SaveRecipeModal />
           </Show>
-          <span class="font-mono text-xs text-text-muted">{STATUS_LABEL[sandbox.state.status]}</span>
+          <span class="shrink-0 whitespace-nowrap font-mono text-xs text-text-muted">{STATUS_LABEL[sandbox.state.status]}</span>
         </div>
       </div>
 

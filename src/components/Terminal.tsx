@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createSignal, onMount } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import { runCommand, type OutputKind } from '../lib/terminalCommands.ts'
+import { interviewState } from '../lib/interviewStore.ts'
 import RnAvatar from './RnAvatar.tsx'
 
 interface TerminalLine {
@@ -59,15 +60,10 @@ export default function Terminal() {
 
   onMount(() => inputRef?.focus())
 
-  const submit = async () => {
-    const value = input()
+  const runValue = async (value: string) => {
     if (!value.trim() || isRunning()) return
 
     print(`$ ${value}`, 'input')
-    setHistory((prev) => [...prev, value])
-    setHistoryIndex(null)
-    setInput('')
-
     setIsRunning(true)
     try {
       await runCommand(value, { print, clear })
@@ -78,6 +74,19 @@ export default function Terminal() {
       inputRef?.focus()
     }
   }
+
+  const submit = async () => {
+    const value = input()
+    if (!value.trim() || isRunning()) return
+
+    setHistory((prev) => [...prev, value])
+    setHistoryIndex(null)
+    setInput('')
+    await runValue(value)
+  }
+
+  /** Pass A: the "Build" CTA below the prompt — fires the same launch path as typing "build"/"andiamo" once the AI PO interview is done. */
+  const triggerBuildCta = () => runValue('build')
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Enter') {
@@ -143,6 +152,22 @@ export default function Terminal() {
           )}
         </For>
       </div>
+
+      <Show when={interviewState.interview?.done}>
+        <div class="border-t border-border px-4 py-2">
+          <button
+            type="button"
+            disabled={isRunning()}
+            class="w-full rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-accent/90 disabled:opacity-50"
+            onClick={(event) => {
+              event.stopPropagation()
+              void triggerBuildCta()
+            }}
+          >
+            Ready to build your app? Click Build
+          </button>
+        </div>
+      </Show>
 
       <div class="flex items-center gap-2 border-t border-border px-4 py-2">
         <span class="text-accent">$</span>

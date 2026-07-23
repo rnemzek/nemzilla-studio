@@ -1,5 +1,5 @@
 import { For, createEffect, onCleanup, onMount } from 'solid-js'
-import { createAuditStore, type ChainStatus, type PolicyStatus } from '../lib/auditStore.ts'
+import { auditStore, type ChainStatus, type PolicyStatus } from '../lib/auditStore.ts'
 
 const CHAIN_STATUS_LABEL: Record<ChainStatus, string> = {
   pending: 'verifying…',
@@ -28,7 +28,7 @@ function formatTime(iso: string): string {
 }
 
 export default function AuditLedgerPanel() {
-  const audit = createAuditStore()
+  const audit = auditStore
   let scrollRef: HTMLDivElement | undefined
 
   onMount(() => {

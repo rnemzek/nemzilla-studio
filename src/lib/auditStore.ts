@@ -140,3 +140,14 @@ export function createAuditStore(): AuditStore {
 
   return { state, connect }
 }
+
+/**
+ * Shared singleton, same pattern as sandboxStore.ts's bottom-of-file export:
+ * AuditLedgerPanel.tsx owns the one live connection (calling `.connect()` in
+ * its `onMount`), while ArtifactsPanel.tsx's Agent Trace view (Pass A) just
+ * reads this same reactive `state` — a second `.connect()` call on this
+ * store would open a redundant SSE connection and reset `blocks` out from
+ * under the first, so nothing else should ever call `createAuditStore()`
+ * directly outside of tests.
+ */
+export const auditStore = createAuditStore()

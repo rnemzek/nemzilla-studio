@@ -2,6 +2,7 @@ import { For, Show, onCleanup, onMount } from 'solid-js'
 import { sandboxStore, type PreviewTab } from '../lib/sandboxStore.ts'
 import { SANDBOX_FRAME_PATH } from '../lib/sandboxTemplate.ts'
 import SaveRecipeModal from './SaveRecipeModal.tsx'
+import ArtifactsPanel from './ArtifactsPanel.tsx'
 
 const DEFAULT_PROMPT = 'ACME Order'
 
@@ -15,6 +16,7 @@ const STATUS_LABEL: Record<string, string> = {
 const TABS: Array<{ id: PreviewTab; label: string }> = [
   { id: 'preview', label: 'App Preview' },
   { id: 'source', label: 'Source Code' },
+  { id: 'artifacts', label: 'Artifacts / Telemetry' },
 ]
 
 export default function AppPreview() {
@@ -78,6 +80,10 @@ export default function AppPreview() {
         <pre class="font-mono text-xs whitespace-pre-wrap text-text-muted">
           <code>{sandbox.state.code || '// no source yet'}</code>
         </pre>
+      </div>
+
+      <div class="h-80 overflow-hidden rounded-b-lg bg-bg" classList={{ hidden: sandbox.state.tab !== 'artifacts' }}>
+        <ArtifactsPanel />
       </div>
 
       {sandbox.state.errorMessage && (

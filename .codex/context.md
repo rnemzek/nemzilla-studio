@@ -351,3 +351,92 @@
       bus refactor (Phase 1), conversational PO interviewer + swarm telemetry (Phase 2), pluggable
       domain micro-agents + Andiamo launch with live policy enforcement (Phase 3).
 
+## [x] UOW 12 - Pass A: Conversational UX Polish, Telemetry Deck & Swarm Pipeline Feedback
+_(Note: a prior session's LLM-driven PO/domain-agent refactor — referenced in that session as
+"UOW-13" — landed on top of UOW-11 before this UOW started, but was never logged to this tracker.
+Its result is visible in `poInterviewLLM.ts`/`domainAgents.ts`/`anthropicClient.ts` and is the
+foundation this UOW builds on; flagging the tracker gap here rather than silently ignoring it.)_
+
+- [x] Task 12.1: **Removed the "andiamo" secret-word requirement.** `poInterviewLLM.ts`'s
+      `SYSTEM_PROMPT` now tells the user, once all three fields are confirmed: "Ready to build your
+      app? Click 'Build' below or type 'build' to launch it." — no more instruction to type a magic
+      word. `terminalCommands.ts` gained `LAUNCH_TRIGGER_PHRASES` (build, build it, go, looks good,
+      make the app, ship it, launch, andiamo, and a few more) checked via `isLaunchTrigger()`
+      immediately once `activeInterview?.done`, *before* the command switch — this ordering matters:
+      without it, typing the bare word "build" post-completion would hit the switch's `case 'build'`
+      and silently start a second, unrelated interview, discarding the completed one. `andiamo`
+      itself still works — it's just one entry in the trigger set now, not documented in `help`.
+      New `src/lib/interviewStore.ts` mirrors `terminalCommands.ts`'s plain-mutable `activeInterview`
+      into a real Solid store (`publishInterviewSnapshot()`, called after every start/turn/cancel) so
+      other components can react to it — `Terminal.tsx` uses it to render a "Ready to build your
+      app? Click Build" button once the interview is done, wired to the exact same `runCommand`
+      code path as typing the phrase.
+- [x] Task 12.2: **Artifacts & Telemetry Deck.** New `src/components/ArtifactsPanel.tsx`, added as
+      a 3rd tab ("Artifacts / Telemetry") extending `AppPreview.tsx`'s existing Preview/Source tab
+      bar (per the DoD's "extend the tab bar" wording) rather than a new standalone panel — keeps
+      the same chrome, no grid-layout changes. Four sub-tabs: **Discovery Transcript** (live off
+      `interviewState`), **Prompt & Payload Inspector** (accordion: System Prompt — fetched once
+      from a new read-only `GET /api/po/interview/meta`, since duplicating the real prompt string
+      client-side would drift; User Inputs; Extracted JSON for `catalog`/`policyRules`), **Agent
+      Trace** (chronological `agent_step`/`policy_check`/`generated_app_payload` entries, sourced
+      from the audit ledger — works for both the classic and swarm pipelines since it renders
+      whatever `action`/`payload.agent` strings actually arrive rather than assuming a fixed agent
+      list), and **Run History** (Task 12.4). `auditStore.ts` gained a bottom-of-file singleton
+      export (same pattern as `sandboxStore.ts`) so `AuditLedgerPanel.tsx` and `ArtifactsPanel.tsx`
+      share one `/api/audit/stream` connection instead of each opening their own (a second `.connect()`
+      call on an independent instance would reset the other's `blocks` out from under it).
+- [x] Task 12.3: **Active Swarm Pipeline Visualization, wired to real execution.** Rewrote
+      `swarmStore.ts`/`SwarmCanvas.tsx` to render *whichever* pipeline is actually running instead
+      of a hardcoded 4-node Planner/Architect/Lead Dev/Reviewer layout — `AgentName` is now `string`,
+      and `SwarmState.stageOrder` grows dynamically as real agent names announce themselves
+      (`PO`/`Architect`/`AI Vendor`/`AI Sport`/.../`Policy`/`Lead Dev` for a swarm run, unchanged for
+      a classic `run`/`triad`). Node count self-scales (radius 30/24/20 at ≤4/≤6/>6 nodes) since a
+      swarm run can have up to 8 stages. `RUN_START_AGENTS` (`Planner`, `PO`) triggers a full
+      client-side reset the instant either pipeline's first stage starts, so back-to-back runs never
+      bleed into each other. Curated micro-status badges (e.g. "Synthesizing UI...", "Compiling
+      blueprint...") render under the active/thinking node, falling back to a generic
+      `"Modeling {agent} schema..."` for any not-explicitly-listed domain agent. **Real bug found and
+      fixed during verification, not new in this UOW:** `/api/agent/spectate` is a genuinely
+      per-build stream by design (closes with `session_ended` once its build ends — asserted by
+      `scripts/verify-agent-stream.ts`), but `swarmStore.ts`'s `connect()` was one-shot — it never
+      reconnected, so the canvas silently froze on whatever run happened to be active when the page
+      first loaded and never saw anything after (confirmed live: the page-load auto-`ACME Order` run
+      finished, and the canvas never advanced past its final frame even once the swarm build's real
+      events were flowing correctly through the audit ledger/Agent Trace view). Fixed client-side —
+      `connect()` now loops, transparently reconnecting after each natural stream close — rather
+      than touching `serveSessionStream()`'s server-side session-scoped-spectate contract, which the
+      existing test suite depends on and which other spectators (e.g. a second browser tab) rely on
+      too.
+- [x] Task 12.4: **Persistent Run Saving ("Save Run").** New `src/lib/runHistoryStore.ts` —
+      `localStorage`-only (no server round-trip; a personal per-browser run history, distinct from
+      `recipeStore.ts`'s code-only, server-archived "Save to Cookbook"). `saveRun()` captures the
+      full bundle: discovery transcript, extracted `catalog`/`policyRules`, this run's own audit
+      ledger blocks, and the generated app code. Surfaced via `ArtifactsPanel.tsx`'s Run History
+      sub-tab: `📦 Save Run` (gated on `sandbox.state.status === 'ready'`, matching
+      `SaveRecipeModal.tsx`'s existing gate), and per-row `View` (switches Transcript/Inspector/Trace
+      to a read-only historical view of that run with a "Viewing saved run — Back to Live" banner,
+      via a local `viewedRun` signal — deliberately *not* touching the live `interviewState`, so
+      inspecting an old run can never be confused with, or interfere with, an in-progress interview),
+      `Load` (pushes the run's code into `<AppPreview/>` via the existing `sandboxStore.setCode()`),
+      and `✕` (delete).
+- **Verification:** `npx tsc -b`/`npm run build` clean; `npm run test:sse` unchanged and passing
+      (the spectate-stream investigation above was resolved without touching any server-side
+      streaming code, so the suite's session-scoped-spectate assertions still hold exactly as
+      written). Full live browser verification (production-mode Playwright, per the project's
+      established environment workaround): three complete discovery interviews end to end (a
+      bakery, a hardware store, a sports-team fan shop), confirming (a) the new CTA copy appears
+      verbatim and the "Ready to build" button correctly launches the swarm build; (b) `AI Sport`
+      correctly dispatches for the sports-merchandise vendor while only the always-on `AI Vendor`/
+      `AI OE` dispatch for the hardware store; (c) the Swarm Canvas grows live from 2→4→6→8 nodes
+      through a real swarm run with correct pulse/glow/micro-status badges and a clean reset from
+      the page-load classic run into the swarm run; (d) Discovery Transcript, the Prompt & Payload
+      Inspector's three accordion sections (including the live-fetched real system prompt), and
+      Agent Trace all render correct live data; (e) Save Run → Run History → View (banner + correct
+      historical transcript) → Back to Live → Load, end to end, zero console errors throughout.
+      One test-harness-only false alarm during this pass, not a product bug: a Playwright
+      `button:has-text("View")` selector was inadvertently matching the "App Preview" tab button too
+      (`"Preview"` contains the substring `"view"`) — resolved by switching the test to an exact-text
+      role query; no application code was at fault.
+- **UOW-12 complete.** All 4 Pass A requirements shipped, plus one genuine pre-existing spectate-
+      stream reconnection bug found and fixed along the way.
+

@@ -1,7 +1,16 @@
 import { createStore, produce, reconcile } from 'solid-js/store'
 import { apiClient } from './apiClient.ts'
 
-export type AgentName = 'Planner' | 'Architect' | 'Lead Dev' | 'Reviewer'
+/**
+ * Pass A: agent names are no longer restricted to the classic
+ * Planner/Architect/Lead Dev/Reviewer set — the "Andiamo!" swarm pipeline
+ * (agentStream.ts's runSwarmPipeline()) emits its own stage names (`PO`,
+ * `Architect`, one entry per dynamically-dispatched domain agent like
+ * `AI Sport`, `Policy`, `Lead Dev`), and this store now renders whichever
+ * pipeline is actually running instead of silently dropping anything that
+ * isn't one of the original 4 names.
+ */
+export type AgentName = string
 export type AgentStatus = 'idle' | 'thinking' | 'active' | 'completed' | 'error'
 
 export interface AgentState {
@@ -11,6 +20,8 @@ export interface AgentState {
 }
 
 export interface SwarmState {
+  /** First-seen order of agents in the current run — grows as new stages/domain agents announce themselves. */
+  stageOrder: AgentName[]
   agents: Record<AgentName, AgentState>
   /** Keyed by `edgeKey(source, target)` — true while data is in transit on that edge. */
   edges: Record<string, boolean>
@@ -18,24 +29,57 @@ export interface SwarmState {
   message: string | null
 }
 
-export const PIPELINE_ORDER: AgentName[] = ['Planner', 'Architect', 'Lead Dev', 'Reviewer']
+/** Idle placeholder shown before any run has ever started on this connection. */
+export const DEFAULT_STAGE_ORDER: AgentName[] = ['Planner', 'Architect', 'Lead Dev', 'Reviewer']
+
+/**
+ * The first stage of each pipeline this app runs — seeing an EXECUTING beat
+ * for one of these means a *new* run has begun, so the canvas resets to a
+ * clean slate first rather than appending onto the previous run's finished
+ * nodes (satisfies "pipeline resets and updates cleanly across multiple
+ * runs" regardless of which pipeline — classic or swarm — just started).
+ */
+const RUN_START_AGENTS = new Set(['Planner', 'PO'])
 
 export function edgeKey(source: AgentName, target: AgentName): string {
   return `${source}->${target}`
 }
 
+function emptyAgentState(): AgentState {
+  return { status: 'idle', latencyMs: null, memoryMb: null }
+}
+
 function createInitialState(): SwarmState {
   const agents = {} as Record<AgentName, AgentState>
-  for (const agent of PIPELINE_ORDER) {
-    agents[agent] = { status: 'idle', latencyMs: null, memoryMb: null }
-  }
+  for (const agent of DEFAULT_STAGE_ORDER) agents[agent] = emptyAgentState()
 
   const edges: Record<string, boolean> = {}
-  for (let i = 0; i < PIPELINE_ORDER.length - 1; i++) {
-    edges[edgeKey(PIPELINE_ORDER[i]!, PIPELINE_ORDER[i + 1]!)] = false
+  for (let i = 0; i < DEFAULT_STAGE_ORDER.length - 1; i++) {
+    edges[edgeKey(DEFAULT_STAGE_ORDER[i]!, DEFAULT_STAGE_ORDER[i + 1]!)] = false
   }
 
-  return { agents, edges, connected: false, message: null }
+  return { stageOrder: [...DEFAULT_STAGE_ORDER], agents, edges, connected: false, message: null }
+}
+
+/** A true clean slate (no placeholder nodes) — used when a new run actually starts. */
+function resetForNewRun(draft: SwarmState): void {
+  draft.stageOrder = []
+  draft.agents = {}
+  draft.edges = {}
+}
+
+/** Adds `name` to the run if this is the first time it's been seen, wiring the incoming edge from whatever the previous stage was. */
+function ensureAgent(draft: SwarmState, name: AgentName): void {
+  if (!draft.agents[name]) draft.agents[name] = emptyAgentState()
+  if (draft.stageOrder.includes(name)) return
+
+  const prevName = draft.stageOrder[draft.stageOrder.length - 1]
+  draft.stageOrder.push(name)
+  if (prevName) {
+    // If the predecessor already finished before this stage was announced
+    // (a fast-dispatching domain agent list), light the edge immediately.
+    draft.edges[edgeKey(prevName, name)] = draft.agents[prevName]?.status === 'completed'
+  }
 }
 
 function parseFrame(chunk: string): { event: string; data: Record<string, unknown> } {
@@ -88,88 +132,130 @@ export function createSwarmStore(): SwarmStore {
         break
       }
       case 'agent_step': {
-        const agent = data.agent as AgentName
+        const agent = String(data.agent ?? '')
         const step = data.state
-        const idx = PIPELINE_ORDER.indexOf(agent)
-        if (idx === -1) break
+        if (!agent) break
 
-        if (step === 'EXECUTING') {
-          setState('agents', agent, 'status', 'active')
-          if (idx > 0) setState('edges', edgeKey(PIPELINE_ORDER[idx - 1]!, agent), false)
-        } else if (step === 'DONE') {
-          setState('agents', agent, 'status', 'completed')
-          if (idx < PIPELINE_ORDER.length - 1) {
-            setState('edges', edgeKey(agent, PIPELINE_ORDER[idx + 1]!), true)
-          }
-        }
+        setState(
+          produce((draft) => {
+            if (step === 'EXECUTING' && RUN_START_AGENTS.has(agent)) resetForNewRun(draft)
+            ensureAgent(draft, agent)
+
+            if (step === 'EXECUTING') {
+              draft.agents[agent]!.status = 'active'
+              const idx = draft.stageOrder.indexOf(agent)
+              if (idx > 0) draft.edges[edgeKey(draft.stageOrder[idx - 1]!, agent)] = false
+            } else if (step === 'DONE') {
+              draft.agents[agent]!.status = 'completed'
+              const idx = draft.stageOrder.indexOf(agent)
+              if (idx !== -1 && idx < draft.stageOrder.length - 1) {
+                draft.edges[edgeKey(agent, draft.stageOrder[idx + 1]!)] = true
+              }
+            }
+          }),
+        )
         break
       }
       case 'token_stream': {
-        const agent = data.agent as AgentName
-        if (PIPELINE_ORDER.includes(agent)) setState('agents', agent, 'status', 'thinking')
+        const agent = String(data.agent ?? '')
+        if (!agent) break
+        setState(
+          produce((draft) => {
+            ensureAgent(draft, agent)
+            draft.agents[agent]!.status = 'thinking'
+          }),
+        )
         break
       }
       case 'metric_tick': {
-        const agent = data.agent as AgentName
-        if (!PIPELINE_ORDER.includes(agent)) break
-        setState('agents', agent, {
-          status: 'active',
-          latencyMs: typeof data.latencyMs === 'number' ? data.latencyMs : null,
-          memoryMb: typeof data.memoryMb === 'number' ? data.memoryMb : null,
-        })
+        const agent = String(data.agent ?? '')
+        if (!agent) break
+        setState(
+          produce((draft) => {
+            ensureAgent(draft, agent)
+            draft.agents[agent] = {
+              status: 'active',
+              latencyMs: typeof data.latencyMs === 'number' ? data.latencyMs : null,
+              memoryMb: typeof data.memoryMb === 'number' ? data.memoryMb : null,
+            }
+          }),
+        )
         break
       }
     }
   }
 
+  /**
+   * `/api/agent/spectate` is a *per-build* stream by design — it closes with
+   * a `session_ended` frame once the build it's watching finishes (verified
+   * by scripts/verify-agent-stream.ts, which depends on that shape). A
+   * one-shot `connect()` would therefore only ever see the single build that
+   * happened to be active at connection time — dead for good the moment
+   * that build ends, silently missing every subsequent run (Pass A: this is
+   * exactly why the swarm canvas used to freeze after the page's initial
+   * auto-run and never picked up a later "Andiamo!" launch). So this loops,
+   * transparently reconnecting after each natural stream close, for as long
+   * as this store stays connected.
+   */
   function connect(): () => void {
     const controller = new AbortController()
+    let stopped = false
 
     setState(reconcile(createInitialState()))
     setState('connected', true)
 
-    ;(async () => {
-      try {
-        const res = await apiClient.api.agent.spectate.$get(undefined, {
-          init: { signal: controller.signal },
-        })
-        if (!res.body) throw new Error('agent stream: empty response body')
+    async function runLoop() {
+      while (!stopped) {
+        try {
+          const res = await apiClient.api.agent.spectate.$get(undefined, {
+            init: { signal: controller.signal },
+          })
+          if (!res.body) throw new Error('agent stream: empty response body')
 
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
 
-        for (;;) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
+          for (;;) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
 
-          let boundary = buffer.indexOf('\n\n')
-          while (boundary !== -1) {
-            const { event, data } = parseFrame(buffer.slice(0, boundary))
-            buffer = buffer.slice(boundary + 2)
-            if (event) dispatch(event, data)
-            boundary = buffer.indexOf('\n\n')
-          }
-        }
-      } catch (err) {
-        if (controller.signal.aborted) return
-        setState('message', err instanceof Error ? err.message : String(err))
-        setState(
-          produce((draft) => {
-            for (const agent of PIPELINE_ORDER) {
-              if (draft.agents[agent].status === 'active' || draft.agents[agent].status === 'thinking') {
-                draft.agents[agent].status = 'error'
-              }
+            let boundary = buffer.indexOf('\n\n')
+            while (boundary !== -1) {
+              const { event, data } = parseFrame(buffer.slice(0, boundary))
+              buffer = buffer.slice(boundary + 2)
+              if (event) dispatch(event, data)
+              boundary = buffer.indexOf('\n\n')
             }
-          }),
-        )
-      } finally {
-        if (!controller.signal.aborted) setState('connected', false)
+          }
+          // Stream ended naturally (the build it was watching finished) —
+          // loop back around and reconnect to watch whatever runs next.
+        } catch (err) {
+          if (controller.signal.aborted) return
+          setState('message', err instanceof Error ? err.message : String(err))
+          setState(
+            produce((draft) => {
+              for (const agent of draft.stageOrder) {
+                if (draft.agents[agent]?.status === 'active' || draft.agents[agent]?.status === 'thinking') {
+                  draft.agents[agent]!.status = 'error'
+                }
+              }
+            }),
+          )
+          // Brief backoff before retrying, so a down server doesn't spin this into a hot loop.
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+        }
       }
-    })()
+    }
 
-    return () => controller.abort()
+    void runLoop()
+
+    return () => {
+      stopped = true
+      controller.abort()
+      setState('connected', false)
+    }
   }
 
   return { state, connect }

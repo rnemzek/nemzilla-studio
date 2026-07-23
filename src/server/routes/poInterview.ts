@@ -1,5 +1,5 @@
 import type { Context } from 'hono'
-import { runPoInterviewTurn, type PoKnownFields, type PoTranscriptEntry } from '../services/poInterviewLLM.ts'
+import { runPoInterviewTurn, SYSTEM_PROMPT, type PoKnownFields, type PoTranscriptEntry } from '../services/poInterviewLLM.ts'
 import { classifyAnthropicError, type LlmErrorCategory } from '../services/anthropicClient.ts'
 
 /** Maps each diagnosed failure category to the HTTP status returned to the client — distinct enough to tell "not configured" (503, an operator problem) apart from a transient upstream failure (502, might work on retry) from the browser's network tab alone. */
@@ -58,6 +58,16 @@ function isValidKnown(v: unknown): v is PoKnownFields {
   if (d.hitlThreshold !== null && typeof d.hitlThreshold !== 'number') return false
   if (d.catalog !== null && !Array.isArray(d.catalog)) return false
   return true
+}
+
+/**
+ * Read-only introspection for the Artifacts/Telemetry deck's "Prompt &
+ * Payload Inspector" (Pass A) — the actual system prompt driving the AI PO,
+ * not a hand-copied duplicate that could drift from what the model really
+ * sees. Never includes the API key or any request-specific data.
+ */
+export function poInterviewMetaHandler(c: Context) {
+  return c.json({ systemPrompt: SYSTEM_PROMPT })
 }
 
 export async function poInterviewHandler(c: Context) {

@@ -11,7 +11,7 @@ import { getSessionHandler, listSessionsHandler, saveRecipeHandler } from './rou
 import { getBibleHandler } from './routes/bible.ts'
 import { getSessionBundleHandler, putSessionBundleArtifactHandler } from './routes/sessionBundle.ts'
 import { orderEventHandler } from './routes/orders.ts'
-import { poInterviewHandler } from './routes/poInterview.ts'
+import { poInterviewHandler, poInterviewMetaHandler } from './routes/poInterview.ts'
 
 const app = new Hono()
   .use('*', securityHeaders())
@@ -32,6 +32,7 @@ const app = new Hono()
   .put('/api/sessions/:id/bundle', (c) => putSessionBundleArtifactHandler(c))
   .post('/api/orders/event', (c) => orderEventHandler(c))
   .post('/api/po/interview', (c) => poInterviewHandler(c))
+  .get('/api/po/interview/meta', (c) => poInterviewMetaHandler(c))
   .get('/api/bible', (c) => getBibleHandler(c))
   // Path must match SANDBOX_FRAME_PATH in src/lib/sandboxTemplate.ts and the
   // exemption in securityHeaders.ts.

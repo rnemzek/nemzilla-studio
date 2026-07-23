@@ -2,6 +2,7 @@ import { apiClient } from './apiClient.ts'
 import { startPoInterview, submitPoAnswer, SYSTEM_ORDER_CEILING, type PoInterviewState } from './poInterview.ts'
 import { getSessionBundle, putSessionArtifact, type SessionBundle } from './sessionBundleClient.ts'
 import { sandboxStore } from './sandboxStore.ts'
+import { publishInterviewSnapshot } from './interviewStore.ts'
 
 export type OutputKind = 'input' | 'output' | 'error' | 'system' | 'po'
 
@@ -26,11 +27,14 @@ const HELP_TEXT = [
   '  metrics           Query /api/health for live status, uptime, and round-trip latency.',
   '  launch [target]   Open an ecosystem link (robert, streaming, grid) or list targets.',
   '  build             Start the AI PO discovery interview (vendor name, catalog, HITL threshold).',
-  '  andiamo           Launch the swarm build from the completed interview into App Preview.',
   '  clear             Clear the terminal output.',
   '',
   'Tip: typing a full sentence instead of a command (e.g. "I want to build an',
   'order entry app for my bakery") starts the AI PO interview automatically.',
+  '',
+  'Once the AI PO confirms it has everything it needs, click the "Build"',
+  'button or just say so — "build it", "go", "looks good", and "make the',
+  'app" all launch the swarm build into App Preview.',
 ]
 
 function parseFrame(chunk: string): { event: string; data: Record<string, unknown> } {
@@ -145,6 +149,7 @@ function printPo(ctx: CommandContext, message: string) {
 async function startInterview(ctx: CommandContext, openingMessage?: string): Promise<void> {
   const step = await startPoInterview(openingMessage)
   activeInterview = step.state
+  publishInterviewSnapshot(activeInterview)
   printPo(ctx, step.reply)
 }
 
@@ -173,6 +178,35 @@ async function persistInterviewArtifacts(state: PoInterviewState): Promise<void>
  */
 const INTERVIEW_META_COMMANDS = new Set(['cancel', 'exit', 'quit'])
 
+/**
+ * Pass A: natural, conversational ways to launch the swarm build once the
+ * interview is done — replaces the old hard requirement to type the secret
+ * word "andiamo". `andiamo` still works (see runAndiamo/runCommand's switch
+ * case below); it's just no longer the only or advertised way in.
+ */
+const LAUNCH_TRIGGER_PHRASES = new Set([
+  'andiamo',
+  'build',
+  'build it',
+  'build the app',
+  'make the app',
+  'looks good',
+  'go',
+  'go for it',
+  "let's go",
+  "let's build",
+  "let's build it",
+  'start build',
+  'start the build',
+  'ship it',
+  'launch',
+  'launch it',
+])
+
+function isLaunchTrigger(rawInput: string): boolean {
+  return LAUNCH_TRIGGER_PHRASES.has(rawInput.trim().toLowerCase())
+}
+
 async function continueInterview(ctx: CommandContext, rawInput: string): Promise<void> {
   const state = activeInterview!
   const lower = rawInput.toLowerCase()
@@ -180,6 +214,7 @@ async function continueInterview(ctx: CommandContext, rawInput: string): Promise
   if (INTERVIEW_META_COMMANDS.has(lower)) {
     printPo(ctx, 'Interview cancelled.')
     activeInterview = null
+    publishInterviewSnapshot(null)
     return
   }
   if (lower === 'help') {
@@ -192,6 +227,7 @@ async function continueInterview(ctx: CommandContext, rawInput: string): Promise
   }
 
   const step = await submitPoAnswer(state, rawInput)
+  publishInterviewSnapshot(state)
   printPo(ctx, step.reply)
 
   if (step.done) {
@@ -259,6 +295,16 @@ export async function runCommand(rawInput: string, ctx: CommandContext): Promise
   // interview is done.
   if (activeInterview && !activeInterview.done) {
     await continueInterview(ctx, trimmed)
+    return
+  }
+
+  // Pass A: once the interview is done, a natural launch phrase ("build it",
+  // "go", "looks good", the still-supported "andiamo", ...) starts the swarm
+  // build — checked here, before the switch below, so it takes priority over
+  // e.g. the literal `build` case, which would otherwise start a *second*,
+  // unrelated interview and discard the completed one.
+  if (activeInterview?.done && isLaunchTrigger(trimmed)) {
+    await runAndiamo(ctx)
     return
   }
 

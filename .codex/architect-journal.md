@@ -603,6 +603,43 @@
   real browser.
 - **Next Milestone:** whatever the user scopes next.
 
+### UOW-12 Sync — Pass A: Conversational UX Polish, Telemetry Deck & Swarm Pipeline Feedback — 2026-07-23
+- **Tracker gap flagged:** a prior session's LLM-driven PO/domain-agent refactor (that session's
+  own "UOW-13") landed after UOW-11 but was never logged here — noted in `context.md` rather than
+  silently backfilled, since this UOW didn't do that work and shouldn't claim its journal.
+- **No more secret word:** the AI PO's completion line now says "Ready to build your app? Click
+  'Build' below or type 'build'" instead of instructing users to type "andiamo". `terminalCommands.ts`
+  gained a `LAUNCH_TRIGGER_PHRASES` set ("build it", "go", "looks good", ..., `andiamo` silently
+  kept) checked *before* the command switch once the interview is done — ordering matters, or the
+  bare word "build" would hit `case 'build'` and start a second interview instead of launching. New
+  `interviewStore.ts` mirrors the plain-mutable interview object into a real Solid store so
+  `Terminal.tsx` can render a reactive "Click Build" CTA button on the same code path.
+- **Artifacts / Telemetry deck:** new `ArtifactsPanel.tsx`, added as `AppPreview.tsx`'s 3rd tab
+  (Transcript / Prompt & Payload Inspector / Agent Trace / Run History) — extends the existing tab
+  bar rather than adding a new panel. `auditStore.ts` gained a shared singleton so this and
+  `AuditLedgerPanel.tsx` don't each open their own `/api/audit/stream` connection.
+- **Swarm Canvas closed a real, previously-flagged gap:** `swarmStore.ts`/`SwarmCanvas.tsx` now
+  render whichever agent sequence is actually running (classic 4-node, or the swarm's dynamic
+  `PO`→`Architect`→domain agents→`Policy`→`Lead Dev`) instead of hardcoding the classic 4 and
+  silently dropping anything else — the debt UOW-11 itself flagged. Curated micro-status badges,
+  self-scaling node size, clean reset on `Planner`/`PO` EXECUTING.
+- **Real bug found and fixed:** `/api/agent/spectate` closes per-build by design (asserted by
+  `scripts/verify-agent-stream.ts`); `swarmStore.ts`'s one-shot `connect()` never reopened it, so
+  the canvas silently froze after the very first build it ever observed. Fixed client-side with a
+  reconnect loop rather than loosening the server's tested session-scoped-spectate contract.
+- **Persistent Run Saving:** new `runHistoryStore.ts` (localStorage-only, distinct from
+  `recipeStore.ts`'s server-archived code-only Cookbook saves) captures the full bundle —
+  transcript, extracted schema, this run's own audit blocks, generated code — surfaced via Run
+  History's Save/View/Load/delete actions.
+- **Verification:** `tsc -b`/`build`/`test:sse` clean throughout (the spectate fix never touched
+  server code, so the existing spectate-stream assertions still hold). Full live Playwright runs
+  across three complete discovery interviews (bakery, hardware store, sports fan shop) covering
+  every Pass A requirement end to end, zero console errors. One test-harness-only false alarm along
+  the way (a `:has-text("View")` selector substring-matching "Preview") — not a product bug.
+- **UOW-12 complete.** All 4 Pass A requirements shipped.
+
+- **Next Milestone:** whatever the user scopes next.
+
 ---
 
 # Architect Journal Entry: NemZilla Studio & Agent Swarm Pipeline

@@ -3,7 +3,7 @@ import { SANDBOX_FRAME_PATH, SANDBOX_MESSAGE, buildSandboxDocument } from './san
 import { reportRole } from './sessionRoleStore.ts'
 
 export type PreviewStatus = 'idle' | 'building' | 'ready' | 'error'
-export type PreviewTab = 'preview' | 'source'
+export type PreviewTab = 'preview' | 'source' | 'artifacts'
 
 export interface SandboxState {
   code: string

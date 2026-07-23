@@ -300,7 +300,7 @@ export default function Terminal() {
             ref={inputRef}
             rows={1}
             class="max-h-32 flex-1 resize-none overflow-y-auto bg-transparent text-text outline-none placeholder:text-text-muted"
-            placeholder={isRunning() ? 'running…' : 'Tell me what to build, or type "/" for commands…'}
+            placeholder={isRunning() ? 'running…' : 'Ask AgentZ or type / for commands...'}
             value={input()}
             disabled={isRunning()}
             onInput={(event) => {

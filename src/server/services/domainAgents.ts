@@ -11,7 +11,7 @@
  * without the literal word "sport"), not string containment.
  */
 import type Anthropic from '@anthropic-ai/sdk'
-import { getAnthropicClient, HAIKU_MODEL } from './anthropicClient.ts'
+import { classifyAnthropicError, getAnthropicClient, HAIKU_MODEL } from './anthropicClient.ts'
 
 export interface DomainAgentContext {
   vendorName: string
@@ -167,7 +167,8 @@ async function classifyRelevantAgents(ctx: DomainAgentContext, candidates: Domai
     const parsed = JSON.parse(block.text) as Record<string, unknown>
     return new Set(candidateIds.filter((id) => parsed[id] === true))
   } catch (err) {
-    console.error('domainAgents: classification call failed, dispatching only always-on agents', err)
+    const { category, logMessage } = classifyAnthropicError(err)
+    console.error(`domainAgents: classification call failed [${category}] — ${logMessage}. Dispatching only always-on agents.`)
     return new Set()
   }
 }

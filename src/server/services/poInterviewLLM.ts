@@ -10,7 +10,7 @@
  * stage-by-stage script.
  */
 import type Anthropic from '@anthropic-ai/sdk'
-import { getAnthropicClient, HAIKU_MODEL } from './anthropicClient.ts'
+import { AnthropicNotConfiguredError, getAnthropicClient, isAnthropicConfigured, HAIKU_MODEL } from './anthropicClient.ts'
 
 export interface PoTranscriptEntry {
   role: 'po' | 'user'
@@ -117,6 +117,12 @@ export async function runPoInterviewTurn(
   known: PoKnownFields,
   userMessage: string | null,
 ): Promise<PoTurnResult> {
+  // Fail fast with a clear, named error rather than letting the SDK attempt
+  // a network call it can't authenticate and throw its generic "Could not
+  // resolve authentication method" deep inside request signing — see
+  // anthropicClient.ts's doc comment on isAnthropicConfigured().
+  if (!isAnthropicConfigured()) throw new AnthropicNotConfiguredError()
+
   const knownSummary = `Already confirmed so far: ${JSON.stringify(known)}`
 
   const response = await getAnthropicClient().messages.create({

@@ -70,7 +70,13 @@ async function callInterviewApi(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ transcript, known, userMessage }),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) {
+      // The server tags each failure category distinctly (e.g. "llm_not_configured"
+      // vs "llm_rate_limited") — surface it here so the browser console shows
+      // the same diagnosis the server already logged, not just a bare status.
+      const body = await res.json().catch(() => null)
+      throw new Error(`HTTP ${res.status}${body?.error ? ` (${body.error})` : ''}`)
+    }
     return (await res.json()) as PoInterviewApiResponse
   } catch (err) {
     console.error('poInterview: /api/po/interview call failed', err)

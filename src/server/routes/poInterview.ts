@@ -1,5 +1,16 @@
 import type { Context } from 'hono'
 import { runPoInterviewTurn, type PoKnownFields, type PoTranscriptEntry } from '../services/poInterviewLLM.ts'
+import { classifyAnthropicError, type LlmErrorCategory } from '../services/anthropicClient.ts'
+
+/** Maps each diagnosed failure category to the HTTP status returned to the client — distinct enough to tell "not configured" (503, an operator problem) apart from a transient upstream failure (502, might work on retry) from the browser's network tab alone. */
+const STATUS_BY_CATEGORY = {
+  not_configured: 503,
+  authentication: 503,
+  rate_limited: 502,
+  connection: 502,
+  api_error: 502,
+  unknown: 502,
+} as const satisfies Record<LlmErrorCategory, number>
 
 /**
  * UOW-13: every request here is a real, billed Anthropic API call — unlike
@@ -77,7 +88,8 @@ export async function poInterviewHandler(c: Context) {
     const result = await runPoInterviewTurn(transcript, known, typeof userMessage === 'string' ? userMessage : null)
     return c.json(result)
   } catch (err) {
-    console.error('poInterviewHandler: LLM call failed', err)
-    return c.json({ error: 'llm_unavailable' }, 502)
+    const { category, logMessage } = classifyAnthropicError(err)
+    console.error(`poInterviewHandler: LLM call failed [${category}] — ${logMessage}`)
+    return c.json({ error: `llm_${category}` }, STATUS_BY_CATEGORY[category])
   }
 }

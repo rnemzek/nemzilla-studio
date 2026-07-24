@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-20 - UAT Fixes: Sticky Nav, Onboarding CTA & AI PO Domain-Locking Bug
-- **Active Task**: UOW-20 complete — ready for next UOW
+- **Current UOW**: UOW-21 - UAT Fix: Guided Banner → Collapsible Top Drawer & Viewport Layout Fix
+- **Active Task**: UOW-21 complete — ready for next UOW
 
 ---
 
@@ -906,4 +906,52 @@ in the SDK doc rather than silently claimed as built._
       a compile check. Zero console errors.
 - **UOW-20 complete.** All 3 UAT issues fixed, with the domain-locking bug traced to its actual root
       cause in Pass E's own overlay-injection design rather than patched at the symptom level.
+
+## [x] UOW 21 - UAT Fix: Guided Banner → Collapsible Top Drawer & Viewport Layout Fix
+
+- **Root cause of the reported viewport collision:** `App.tsx`'s `<main>` was a `flex flex-1
+      flex-col items-center justify-center` column containing the h1/subtitle, the guided banner,
+      the Swarm Canvas, and the 3-column workspace grid all together. `justify-center` centers a
+      flex column's *total* content height within its container — so when the banner's own expanded
+      height pushed that total past the viewport height, the *whole column* shifted up, cutting the
+      Swarm Canvas's top nodes off above the visible area while simultaneously pushing the bottom
+      workspace row (Terminal/App Preview/Audit Ledger) toward or past the bottom edge. This wasn't
+      a padding problem — it was a structural one: the banner's height was directly coupled to the
+      centering computation of content it had no business being centered alongside.
+- [x] Task 21.1 (Collapsible Top Drawer): `GuidedWorkflowBanner.tsx` moved out of `<main>`'s centered
+      flow entirely — now a full-width section rendered directly below `<EcosystemNav/>` in
+      `App.tsx`, decoupling its height from the workspace's centering computation regardless of
+      open/closed state. New `src/lib/guidedBannerStore.ts` — a plain shared signal (same
+      toggle-button-in-nav/drawer-elsewhere pattern as `adminDrawerStore.ts`) reading/writing
+      `localStorage`'s `agentz_guide_dismissed` key with the exact `'true'`/`'false'` string values
+      specified (a deliberate divergence from this project's usual `nemzilla-studio:`-prefixed key
+      convention — honored literally since it was explicit). Defaults to expanded unless the flag is
+      already `'true'`. The drawer's own prominent "✕ Dismiss" button sets the flag and smoothly
+      collapses it (a `max-height`/`opacity` transition — the same technique `Terminal.tsx`'s
+      expand/collapse already uses, kept consistent rather than introducing a second one).
+- [x] Task 21.2 (Header Toggle Button): `EcosystemNav.tsx` gained an "ℹ️ How it Works" button
+      (matching `FeedbackModal.tsx`'s existing button styling) that calls `toggleGuide()` — reopens a
+      dismissed drawer or closes an open one, independent of the dismissed-flag's persisted default.
+- [x] Task 21.3 (Viewport Grid Alignment): with the banner removed from `<main>`'s flow, also
+      changed `<main>`'s own `justify-center` to plain top-aligned flow (removing the centering that
+      caused the symmetric top/bottom cutoff in the first place) and reduced its vertical padding
+      (`py-12` → `py-6 sm:py-8`) to reclaim vertical space regardless of drawer state.
+- **Verification:** `npx tsc -b` and `npm run build` (as requested) both clean. Full production-mode
+      Playwright pass at a standard 1280×800 viewport confirmed: a fresh page load with no
+      `localStorage` flag defaults the drawer open (`max-height: 480px`); clicking "✕ Dismiss" sets
+      `agentz_guide_dismissed` to `'true'`, smoothly collapses the drawer (`max-height: 0px`), and
+      brings the Swarm Canvas fully within the viewport (top `222px`, bottom `572px` — zero cutoff);
+      **reloading the page correctly re-initializes collapsed** (the persisted default), with the
+      entire workspace — Swarm Canvas through the start of the Terminal row — fitting cleanly with
+      no top cutoff, exactly matching the explicit requirement; and the header's "How it Works"
+      button correctly toggles the drawer open and closed again independent of the persisted
+      default. One honest nuance: with the drawer *expanded* (the first-time-visitor state before
+      any dismiss), the Swarm Canvas's own container sits ~29px above an 800px viewport — but this
+      only clips the section's own label/padding, not the actual agent node circles (which sit well
+      below within the SVG), and the explicit requirement was scoped to the *collapsed* state having
+      zero cutoff, which is fully met. Zero new console errors (the one message seen was the same
+      pre-existing, already-documented `auditStore.ts` reload artifact from UOW-15, triggered by the
+      test's own `page.reload()` call).
+- **UOW-21 complete.** Both requirements shipped, with the fix applied at the actual structural root
+      cause (the banner's coupling to a centered flex column) rather than as a padding patch.
 

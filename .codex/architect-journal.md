@@ -856,6 +856,27 @@
   run first, getting back a correctly to-do-list-flavored reply with zero order-entry language.
 - **UOW-20 complete.**
 
+### UOW-21 Sync — UAT Fix: Guided Banner → Collapsible Top Drawer & Viewport Layout Fix — 2026-07-24
+- **Root cause:** `App.tsx`'s `<main>` centered its *entire* content column (`justify-center`) —
+  h1/subtitle, guided banner, Swarm Canvas, and the workspace grid together. The banner's own
+  expanded height was directly coupled to that centering computation, so extra height there shifted
+  the whole column, cutting Swarm Canvas nodes off the top while pushing the bottom row toward/past
+  the viewport edge. Not a padding bug — a structural one.
+- **Fix:** moved `GuidedWorkflowBanner.tsx` out of `<main>` entirely, now a full-width section
+  directly below `EcosystemNav.tsx`, decoupling its height from the workspace's centering regardless
+  of state. New `guidedBannerStore.ts` (same toggle-in-nav/drawer-elsewhere shape as
+  `adminDrawerStore.ts`) reads/writes the exact `agentz_guide_dismissed`/`'true'` key/value
+  specified. `EcosystemNav.tsx` gained an "ℹ️ How it Works" toggle button. `<main>` dropped
+  `justify-center` for top-aligned flow and got tighter vertical padding.
+- **Verification:** `tsc -b`/`build` (as requested) clean. Full production-mode Playwright pass at a
+  standard 1280×800 viewport confirmed the whole flow: fresh load defaults open, Dismiss persists and
+  collapses smoothly with the Swarm Canvas landing fully in-viewport (zero cutoff), a reload
+  correctly re-initializes collapsed per the persisted flag, and the header toggle reopens/closes it
+  independently. One honest nuance flagged: the *expanded* first-visit state still has ~29px of
+  container overflow at 800px height (label/padding only, not the actual node circles) — the
+  explicit requirement was scoped to the collapsed state, which is fully clean.
+- **UOW-21 complete.**
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

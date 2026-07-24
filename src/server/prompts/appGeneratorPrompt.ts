@@ -228,13 +228,8 @@ function buildAcmeOrderSnippet(autoApproveCeiling: number, denyCeiling: number, 
 /**
  * Pass E "Plan C": the default seed payload for the Unified Itinerary
  * Synthesizer — real content for all three merged domains (errand, culinary,
- * entertainment), not placeholder text. The recipe's `externalUrl` is a real
- * search-results link rather than a specific guessed article URL: a specific
- * "Paula Deen Pecan Chicken Salad" page wasn't given, and TheMealDB's free
- * API (this project's only existing live recipe source) is generic/user-
- * submitted, not celebrity-chef-branded, so it would never actually return
- * this dish — fabricating either a specific article URL or a fake API match
- * would both be worse than a real, working search link.
+ * entertainment), not placeholder text. The recipe's `externalUrl` is the
+ * real Food.com page for this dish (supplied directly rather than guessed).
  */
 const DEFAULT_UNIFIED_ITINERARY: UnifiedItineraryPayload = {
   slug: 'today',
@@ -263,7 +258,7 @@ const DEFAULT_UNIFIED_ITINERARY: UnifiedItineraryPayload = {
       title: 'Paula Deen Pecan Chicken Salad',
       time: '5:00 PM',
       details: {
-        externalUrl: 'https://www.google.com/search?q=paula+deen+pecan+chicken+salad+recipe',
+        externalUrl: 'https://www.food.com/recipe/paula-deens-pecan-chicken-salad-377918',
         checklist: [
           { id: 'ing-chicken', text: 'Cooked chicken, chopped', completed: false },
           { id: 'ing-pecans', text: 'Toasted pecans, chopped', completed: false },
@@ -373,14 +368,52 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
     return state
   }
 
-  // Best-effort: the parent relays this into its own (real-origin)
-  // localStorage — see sandboxStore.ts. Never written directly to this
-  // document's own localStorage, since the sandbox's opaque origin means
-  // that would vanish before the next page load anyway.
+  var LOCAL_STORAGE_KEY = 'nemzilla-itinerary-state'
+
+  // This same generated document runs in two different contexts, and needs a
+  // different persistence path in each:
+  //  - Embedded in the Studio's sandboxed preview iframe (sandbox="allow-scripts",
+  //    no allow-same-origin): the document gets a fresh opaque origin every
+  //    load, so anything written to ITS OWN localStorage is already gone next
+  //    time — relaying through the parent (a real, stable origin; see
+  //    sandboxStore.ts) is the only way that actually persists there.
+  //  - Opened standalone as a published /share/:slug page: there is no
+  //    parent to relay to (window.parent === window), but this IS a normal,
+  //    real origin now, so its own localStorage works completely normally.
+  // Doing both, each wrapped so a failure in one never blocks the other, is
+  // correct in both contexts: the postMessage silently goes nowhere when
+  // standalone (nothing listens to a message a page sends itself), and the
+  // direct localStorage write silently no-ops (or occasionally throws, in
+  // browsers that reject storage access from an opaque origin) when sandboxed.
   function persistState() {
+    var state = collectState()
     try {
-      window.parent.postMessage({ type: ITINERARY_STATE_TYPE, state: collectState() }, '*')
+      window.parent.postMessage({ type: ITINERARY_STATE_TYPE, state: state }, '*')
     } catch (e) {}
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state))
+    } catch (e) {}
+  }
+
+  function applyState(saved) {
+    if (!saved) return
+    TASKS.forEach(function (t) {
+      if (saved[t.id] !== undefined) t.completed = !!saved[t.id]
+      if (t.details && t.details.checklist) {
+        t.details.checklist.forEach(function (ci) {
+          if (saved[ci.id] !== undefined) ci.completed = !!saved[ci.id]
+        })
+      }
+    })
+  }
+
+  function loadOwnLocalStorage() {
+    try {
+      var raw = localStorage.getItem(LOCAL_STORAGE_KEY)
+      return raw ? JSON.parse(raw) : null
+    } catch (e) {
+      return null
+    }
   }
 
   function renderErrands() {
@@ -420,7 +453,7 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
       : ''
     header.innerHTML = '<p class="font-medium">' + recipeTask.title + '</p>' +
       (recipeTask.details && recipeTask.details.externalUrl
-        ? '<a href="' + recipeTask.details.externalUrl + '" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">🔎 Search for this recipe</a>'
+        ? '<a href="' + recipeTask.details.externalUrl + '" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">🔗 View full recipe</a>'
         : '') +
       readyBanner
 
@@ -467,22 +500,22 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
     })
 
   // Parent -> child restore, sent once after this document confirms it has
-  // rendered (see sandboxStore.ts) — applies whatever was saved from a
-  // previous visit before this document existed.
+  // rendered (see sandboxStore.ts) — only ever arrives when embedded in the
+  // Studio's sandbox iframe; a standalone published page has no parent to
+  // send it, which is fine, since loadOwnLocalStorage() below already
+  // covers that case directly.
   window.addEventListener('message', function (event) {
     if (!event.data || event.data.type !== RESTORE_ITINERARY_STATE_TYPE) return
-    var saved = event.data.state || {}
-    TASKS.forEach(function (t) {
-      if (saved[t.id] !== undefined) t.completed = !!saved[t.id]
-      if (t.details && t.details.checklist) {
-        t.details.checklist.forEach(function (ci) {
-          if (saved[ci.id] !== undefined) ci.completed = !!saved[ci.id]
-        })
-      }
-    })
+    applyState(event.data.state)
     renderErrands()
     renderRecipe()
   })
+
+  // Covers the standalone /share/:slug case (a real origin, no parent) —
+  // harmlessly finds nothing yet when embedded in the sandbox iframe, since
+  // that context's own localStorage never actually persisted across the
+  // reload that just happened (see the comment on persistState() above).
+  applyState(loadOwnLocalStorage())
 
   renderErrands()
   renderRecipe()

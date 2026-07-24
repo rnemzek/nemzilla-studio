@@ -13,7 +13,7 @@
  * this is operator telemetry for a live demo, not a durable user database.
  */
 
-export type Milestone = 'PO Interview' | 'Swarm Executed' | 'Feedback Submitted'
+export type Milestone = 'PO Interview' | 'Swarm Executed' | 'Feedback Submitted' | 'App Published'
 
 export interface VisitorSession {
   visitorId: string

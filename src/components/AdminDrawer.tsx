@@ -7,6 +7,7 @@ const MILESTONE_BADGE: Record<string, string> = {
   'PO Interview': 'border-accent/40 text-accent',
   'Swarm Executed': 'border-emerald-500/40 text-emerald-400',
   'Feedback Submitted': 'border-amber-500/40 text-amber-300',
+  'App Published': 'border-violet-500/40 text-violet-300',
 }
 
 const HIRE_LABEL: Record<string, string> = { yes: '✅ Yes', needs_work: '🛠️ Needs Work' }

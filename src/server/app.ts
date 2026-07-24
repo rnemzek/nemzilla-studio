@@ -15,6 +15,8 @@ import { poInterviewHandler, poInterviewMetaHandler } from './routes/poInterview
 import { submitFeedbackHandler, listFeedbackHandler } from './routes/feedback.ts'
 import { touchVisitorHandler } from './routes/visitor.ts'
 import { listSessionsAdminHandler, getSessionDetailAdminHandler } from './routes/admin.ts'
+import { publishAppHandler } from './routes/publish.ts'
+import { shareAppHandler } from './routes/share.ts'
 
 const app = new Hono()
   .use('*', securityHeaders())
@@ -42,9 +44,12 @@ const app = new Hono()
   .post('/api/visitor/touch', (c) => touchVisitorHandler(c))
   .get('/api/admin/sessions', (c) => listSessionsAdminHandler(c))
   .get('/api/admin/sessions/:visitorId', (c) => getSessionDetailAdminHandler(c))
+  .post('/api/publish', (c) => publishAppHandler(c))
   // Path must match SANDBOX_FRAME_PATH in src/lib/sandboxTemplate.ts and the
   // exemption in securityHeaders.ts.
   .get('/sandbox-frame', sandboxFrameHandler)
+  // Public edge route for published live apps — also exempted in securityHeaders.ts.
+  .get('/share/:slug', (c) => shareAppHandler(c))
 
 export default app
 export type AppType = typeof app

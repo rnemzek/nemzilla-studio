@@ -39,3 +39,6 @@ blob-report/
 
 # Stray local file
 *.bak
+
+# Runtime data (published_apps.json — Plan C's file-backed publish store)
+data/

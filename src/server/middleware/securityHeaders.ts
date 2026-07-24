@@ -23,12 +23,13 @@ export const securityHeaders = (): MiddlewareHandler => {
 
     if (!isProduction) return
 
-    // The sandbox iframe shim needs its own permissive CSP (Tailwind CDN,
-    // inline generated code, frame-ancestors 'self') — it sets that itself
-    // in routes/sandboxFrame.ts, so skip the strict site-wide policy here
-    // rather than clobbering it (this middleware's headers are applied after
-    // the route handler's, since they're set post-`next()`).
-    if (c.req.path === '/sandbox-frame') return
+    // The sandbox iframe shim and published /share/:slug pages each need
+    // their own permissive CSP (Tailwind CDN, inline generated code) — they
+    // set that themselves in routes/sandboxFrame.ts/routes/share.ts, so skip
+    // the strict site-wide policy here rather than clobbering it (this
+    // middleware's headers are applied after the route handler's, since
+    // they're set post-`next()`).
+    if (c.req.path === '/sandbox-frame' || c.req.path.startsWith('/share/')) return
 
     c.header('Content-Security-Policy', CSP_DIRECTIVES)
     c.header('X-Frame-Options', 'DENY')

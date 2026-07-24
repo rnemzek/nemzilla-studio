@@ -808,6 +808,32 @@
   full preview relaunch. Zero console errors.
 - **UOW-18 complete.**
 
+### UOW-19 Sync — Plan C UOW-3/4: Edge Publishing Engine & QR Code Modal — 2026-07-24
+- **Detail update:** the Pecan Chicken Salad recipe link now points to the real Food.com page
+  supplied directly, replacing the earlier search-link placeholder.
+- **Persistent storage:** `publishedAppStore.ts` — file-backed JSON (`data/published_apps.json`,
+  gitignored), not SQLite, matching this project's established no-new-runtime-deps norm for exactly
+  this shape of need. Real readable slugs with real collision handling, verified live.
+- **`POST /api/publish` / `GET /share/:slug`:** the public route needed its own CSP exemption
+  (extended the existing `/sandbox-frame` carve-out in `securityHeaders.ts`) so the Tailwind CDN
+  script isn't blocked by the site-wide strict policy — mirrors `sandboxFrame.ts`'s own pattern
+  exactly.
+- **Publish button + QR modal:** `PublishModal.tsx`, using a newly added `qrcode` package — a
+  deliberate, scoped exception to the no-new-deps norm, since a hand-rolled QR encoder risks
+  producing an unscannable code and the ask itself offered a library as an acceptable option.
+  Rendered as a PNG data URI specifically so the Studio's own strict CSP needed zero relaxation.
+- **The interesting design problem:** the published page is a real top-level page at a real origin —
+  not the sandboxed iframe the Studio preview uses — so the itinerary snippet's persistence logic
+  needed to work correctly in both contexts with the same generated code. Made `persistState()`/
+  restore do both the parent-relay (UOW-18, works embedded) and a direct own-origin `localStorage`
+  write (works standalone), each safely inert where it doesn't apply. Verified live: a real page
+  reload of a published itinerary page correctly restored a checked box via direct localStorage.
+- **Verification:** `tsc -b`/`test:sse` (as requested) and `build` all clean. Full production-mode
+  Playwright pass confirmed the whole publish → QR → visit-standalone → check-a-box → reload →
+  still-checked chain end to end, plus collision-avoided slugs across two publishes. One console
+  message was a Playwright-only clipboard-permission limitation, not a real bug.
+- **UOW-19 complete.**
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

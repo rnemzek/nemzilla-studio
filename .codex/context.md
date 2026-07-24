@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-18 - Plan C Kickstart: Unified Itinerary Synthesizer
-- **Active Task**: UOW-18 complete — ready for next UOW
+- **Current UOW**: UOW-19 - Plan C UOW-3/4: Edge Publishing Engine & QR Code Modal
+- **Active Task**: UOW-19 complete — ready for next UOW
 
 ---
 
@@ -799,4 +799,63 @@ in the SDK doc rather than silently claimed as built._
       wiring that merely compiles. Zero console errors.
 - **UOW-18 complete.** All 4 Plan-C-kickstart tasks shipped, with the sandbox/localStorage tension
       surfaced and resolved rather than either ignored or used to silently weaken the sandbox.
+
+## [x] UOW 19 - Plan C UOW-3/4: Edge Publishing Engine & QR Code Modal
+
+- [x] Detail update: `DEFAULT_UNIFIED_ITINERARY`'s recipe `externalUrl` now points to the real
+      Food.com page supplied directly (`https://www.food.com/recipe/paula-deens-pecan-chicken-
+      salad-377918`), replacing the earlier search-link fallback; the link label changed to
+      "🔗 View full recipe" to match.
+- [x] Task 19.1 (Persistent Payload Storage): new `src/server/services/publishedAppStore.ts` — a
+      file-backed JSON store (`data/published_apps.json`, gitignored), not SQLite, matching this
+      project's established zero-new-runtime-deps track record for exactly this kind of need. Real
+      readable slugs (`{persona-first-name}-{MMDDYYYY}-{keyword}`, e.g. `karena-07242026-agentz`)
+      when none is supplied, with real collision handling (`-2`, `-3`, ...) verified live across two
+      publishes in the same session/day.
+- [x] Task 19.2 (`POST /api/publish`): validates `title`/`htmlPayload` (length-capped) and an
+      optional client-supplied `slug` (charset-validated); tags the publish with the visitor's
+      identity when present (touches `visitorTracker.ts`, adds a new `'App Published'` milestone —
+      arguably this app's highest-intent action, since it produces something the visitor can carry
+      away — and fires the existing high-value webhook).
+- [x] Task 19.3 (`GET /share/:slug`): public, zero-auth edge route serving the stored HTML verbatim
+      via `c.html()`. Needed its own CSP exemption in `securityHeaders.ts` (extended the existing
+      `/sandbox-frame` exemption to also cover `/share/*`) mirroring `sandboxFrame.ts`'s own
+      permissive-CSP pattern, since the published document needs the Tailwind CDN script the site-
+      wide strict CSP would otherwise block.
+- [x] Task 19.4 (Publish button + Deployment Modal): new `src/components/PublishModal.tsx` — a
+      "🚀 Publish Live App" button in `AppPreview.tsx`'s toolbar (next to the existing Save-to-
+      Cookbook button, same `status === 'ready'` gating) opens a modal with the live link, a QR code,
+      and a Copy Link button. Added the `qrcode` npm package (+ `@types/qrcode`) — a deliberate,
+      scoped exception to this project's no-new-deps norm: hand-rolling a correct QR encoder (Reed-
+      Solomon error correction, matrix placement) risks silently producing an unscannable code, and
+      the ask itself explicitly offered "a standard inline QR library" as an acceptable option.
+      Rendered as a PNG data URI (`QRCode.toDataURL()`) specifically so no CSP relaxation was needed
+      on the Studio side (`img-src 'self' data:` already covers it).
+- **Real cross-context design problem worked through, not just implemented literally:** the
+  published page is served as a genuine top-level page at a real origin (not the sandboxed iframe
+  the Studio preview uses), so the itinerary snippet's checkbox persistence needed to work
+  correctly in *both* contexts with the same generated code. `buildUnifiedItinerarySnippet()`'s
+  `persistState()`/restore logic now does both, each safely no-op'ing where it doesn't apply: posts
+  to `window.parent` (works in the sandboxed Studio preview via the UOW-18 relay; silently goes
+  nowhere standalone, since nothing listens to a page's message to itself) *and* writes directly to
+  its own `localStorage` (silently fails or no-ops in the sandboxed iframe's opaque origin; works
+  completely normally on the published page's real origin). Verified both paths live: the Studio
+  iframe preview via the parent-relay (UOW-18), and — new in this UOW — a real published page where
+  checking a box, then performing an actual full page reload, correctly restored it via direct
+  localStorage.
+- **Verification:** `npx tsc -b`/`npm run test:sse` (as requested) both clean; `npm run build` also
+      clean. Full production-mode Playwright pass confirmed: publishing the default ACME demo
+      produces a readable share URL and a real QR PNG data URI; visiting that URL in a fresh browser
+      context returns `200`/`text/html; charset=UTF-8` and renders the app correctly outside the
+      Studio entirely; publishing the itinerary snippet gets a distinct, collision-avoided slug;
+      checking a box on the *standalone* published itinerary page writes to that page's own real
+      `localStorage`, and survives an actual page reload; `data/published_apps.json` on disk
+      correctly holds all three published entries. One console message during the pass
+      (`clipboard write failed... Write permission denied`) is a Playwright headless-context
+      limitation (no `clipboard-write` permission granted to the test browser), not a product bug —
+      the copy handler already catches it gracefully, and real browsers grant this on a genuine
+      user-initiated click without any special setup.
+- **UOW-19 complete.** Both Plan C tasks (persistent payload storage, publish button + QR modal)
+      shipped and verified end-to-end, including the standalone-page persistence path UOW-18 didn't
+      need to solve for (no published-page context existed yet at that point).
 

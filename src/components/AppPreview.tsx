@@ -4,6 +4,7 @@ import { SANDBOX_FRAME_PATH } from '../lib/sandboxTemplate.ts'
 import { policyTrajectoryState, TRAJECTORY_STAGES, decisionLabel } from '../lib/policyTrajectoryStore.ts'
 import { activeTemplateId, getActiveTemplate } from '../lib/templateStore.ts'
 import SaveRecipeModal from './SaveRecipeModal.tsx'
+import PublishModal from './PublishModal.tsx'
 import ArtifactsPanel from './ArtifactsPanel.tsx'
 
 const DEFAULT_PROMPT = 'ACME Order'
@@ -82,9 +83,10 @@ export default function AppPreview() {
             )}
           </For>
         </div>
-        <div class="flex shrink-0 items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <Show when={sandbox.state.status === 'ready'}>
             <SaveRecipeModal />
+            <PublishModal />
           </Show>
           <span class="shrink-0 whitespace-nowrap font-mono text-xs text-text-muted">{STATUS_LABEL[sandbox.state.status]}</span>
         </div>

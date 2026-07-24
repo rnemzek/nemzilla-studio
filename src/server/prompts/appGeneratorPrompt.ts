@@ -1,10 +1,23 @@
 import { ACTION_KIT_REGISTRY } from '../../lib/actionKit.ts'
 import { resolveOrderThreshold, SYSTEM_CEILING, type PolicyCheckResult } from '../services/policyEngine.ts'
+import type { UnifiedItineraryPayload } from '../../types/itinerary.ts'
 
 // Mirrors SANDBOX_MESSAGE.order in src/lib/sandboxTemplate.ts — see
 // swarmCodeSynthesizer.ts for the same duplicated-constant pattern
 // (src/server and src/lib sit in separate tsconfig projects).
 const ORDER_MESSAGE_TYPE = 'nemzilla:sandbox-order-decision'
+// Mirrors SANDBOX_MESSAGE.itineraryState/restoreItineraryState in sandboxTemplate.ts.
+const ITINERARY_STATE_MESSAGE_TYPE = 'nemzilla:sandbox-itinerary-state'
+const RESTORE_ITINERARY_STATE_MESSAGE_TYPE = 'nemzilla:sandbox-restore-itinerary-state'
+
+/** Mirrors swarmCodeSynthesizer.ts's escapeHtml/toInlineJson — duplicated rather than imported for the same tsconfig-project-boundary reason as ORDER_MESSAGE_TYPE above. */
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function toInlineJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c')
+}
 
 export const SCENARIOS = ['acme-order', 'today-itinerary', 'b2b-lead-scoring', 'default-sandbox'] as const
 export type ScenarioId = (typeof SCENARIOS)[number]
@@ -212,103 +225,270 @@ function buildAcmeOrderSnippet(autoApproveCeiling: number, denyCeiling: number, 
 </script>`
 }
 
-const TODAY_ITINERARY_SNIPPET = `<div class="min-h-screen bg-slate-950 p-6 text-slate-100">
-  <div class="mx-auto max-w-3xl">
-    <h1 class="text-2xl font-bold">My TODAY Itinerary</h1>
-    <p class="mt-1 text-sm text-slate-400">Engine B: live fetches from MLB Stats, TheMealDB, and Open-Meteo — plus a weekend errand checklist.</p>
+/**
+ * Pass E "Plan C": the default seed payload for the Unified Itinerary
+ * Synthesizer — real content for all three merged domains (errand, culinary,
+ * entertainment), not placeholder text. The recipe's `externalUrl` is a real
+ * search-results link rather than a specific guessed article URL: a specific
+ * "Paula Deen Pecan Chicken Salad" page wasn't given, and TheMealDB's free
+ * API (this project's only existing live recipe source) is generic/user-
+ * submitted, not celebrity-chef-branded, so it would never actually return
+ * this dish — fabricating either a specific article URL or a fake API match
+ * would both be worse than a real, working search link.
+ */
+const DEFAULT_UNIFIED_ITINERARY: UnifiedItineraryPayload = {
+  slug: 'today',
+  title: 'My TODAY Itinerary',
+  date: new Date().toISOString().slice(0, 10),
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  tasks: [
+    {
+      id: 'errand-lowes',
+      category: 'errand',
+      title: "Get mulch from Lowe's",
+      time: '2:00 PM',
+      location: "Lowe's Home Improvement",
+    },
+    {
+      id: 'errand-jiffylube',
+      category: 'errand',
+      title: 'Jiffy Lube oil change',
+      time: '3:30 PM',
+      location: 'Jiffy Lube',
+    },
+    {
+      id: 'culinary-pecan-chicken-salad',
+      category: 'culinary',
+      title: 'Paula Deen Pecan Chicken Salad',
+      time: '5:00 PM',
+      details: {
+        externalUrl: 'https://www.google.com/search?q=paula+deen+pecan+chicken+salad+recipe',
+        checklist: [
+          { id: 'ing-chicken', text: 'Cooked chicken, chopped', completed: false },
+          { id: 'ing-pecans', text: 'Toasted pecans, chopped', completed: false },
+          { id: 'ing-celery', text: 'Celery, diced', completed: false },
+          { id: 'ing-mayo', text: 'Mayonnaise', completed: false },
+          { id: 'ing-onion', text: 'Green onions', completed: false },
+          { id: 'ing-lemon', text: 'Lemon juice', completed: false },
+          { id: 'ing-seasoning', text: 'Salt & pepper', completed: false },
+        ],
+      },
+    },
+    {
+      id: 'entertainment-tonight',
+      category: 'entertainment',
+      title: "Tonight's Game",
+      time: '7:05 PM',
+      details: {
+        streamingProvider: 'MASN, YouTube TV',
+        notes: 'Live matchup fetched from the MLB Stats API when available.',
+      },
+    },
+  ],
+}
 
-    <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <div id="game-card" class="rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400">Tonight's Game</h2>
-        <p class="mt-2 text-sm text-slate-300">Loading…</p>
-      </div>
-      <div id="meal-card" class="rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400">Dinner Recipe</h2>
-        <p class="mt-2 text-sm text-slate-300">Loading…</p>
-      </div>
-      <div id="weather-card" class="rounded-lg border border-slate-800 bg-slate-900 p-4">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-slate-400">Weather Now</h2>
-        <p class="mt-2 text-sm text-slate-300">Loading…</p>
-      </div>
+/**
+ * Synthesizes a `UnifiedItineraryPayload` (errands + culinary + entertainment)
+ * into one Day-Planner micro-app — the "Plan C" merge of what were three
+ * separate domain silos (TODO, WFD, itinerary) into a single generated app.
+ * Reuses this project's established single-file HTML/Tailwind/vanilla-JS
+ * shape (no framework inside the sandbox, matches every other scenario).
+ *
+ * All payload text is HTML-escaped before being embedded — this function is
+ * a general synthesizer, not just a static template, so (unlike a hardcoded
+ * const) it may eventually be fed AI/PO-derived content the same way
+ * `swarmCodeSynthesizer.ts`'s order-entry synthesizer already treats
+ * interview data as untrusted.
+ */
+function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string {
+  const safeTitle = escapeHtml(payload.title)
+  const escapedPayload: UnifiedItineraryPayload = {
+    ...payload,
+    tasks: payload.tasks.map((task) => ({
+      ...task,
+      title: escapeHtml(task.title),
+      location: task.location ? escapeHtml(task.location) : task.location,
+      details: task.details
+        ? {
+            ...task.details,
+            externalUrl: task.details.externalUrl ? escapeHtml(task.details.externalUrl) : task.details.externalUrl,
+            streamingProvider: task.details.streamingProvider ? escapeHtml(task.details.streamingProvider) : task.details.streamingProvider,
+            notes: task.details.notes ? escapeHtml(task.details.notes) : task.details.notes,
+            checklist: task.details.checklist?.map((item) => ({ ...item, text: escapeHtml(item.text) })),
+          }
+        : task.details,
+    })),
+  }
+  const tasksJson = toInlineJson(escapedPayload.tasks)
+
+  return `<div class="min-h-screen bg-slate-950 p-6 text-slate-100">
+  <div class="mx-auto max-w-3xl">
+    <h1 class="text-2xl font-bold">✨ ${safeTitle}</h1>
+    <p class="mt-1 text-sm text-slate-400">Unified Itinerary Synthesizer — errands, dinner, and tonight's entertainment in one plan.</p>
+
+    <div class="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Today's Errands</h2>
+      <ul id="errand-list" class="mt-2 space-y-2 text-sm"></ul>
     </div>
 
     <div class="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Weekend Errands</h2>
-      <ul id="errands" class="mt-2 space-y-2 text-sm"></ul>
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Tonight's Dinner</h2>
+      <div id="recipe-header" class="mt-2 text-sm"></div>
+      <ul id="recipe-checklist" class="mt-3 space-y-2 text-sm"></ul>
     </div>
 
-    <div class="mt-6">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Virtual Bus Alerts</h2>
-      <ul id="alerts" class="mt-2 space-y-2 text-sm text-slate-300"></ul>
+    <div class="mt-6 rounded-lg border border-slate-800 bg-gradient-to-r from-slate-900 to-slate-800 p-4">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Evening Entertainment</h2>
+      <p id="entertainment-banner" class="mt-2 text-sm text-slate-300">Loading tonight's matchup…</p>
     </div>
   </div>
 </div>
 <script>
-  var FALLBACK = {
-    game: { away: 'New York Yankees', home: 'Baltimore Orioles' },
-    meal: { name: 'Chicken Handi', instructions: 'Marinate the chicken, sear it, then simmer in a spiced tomato-yogurt sauce until tender.' },
-    weather: { tempC: 25.8, windKph: 9.6 },
+  var TASKS = ${tasksJson}
+  var ITINERARY_STATE_TYPE = '${ITINERARY_STATE_MESSAGE_TYPE}'
+  var RESTORE_ITINERARY_STATE_TYPE = '${RESTORE_ITINERARY_STATE_MESSAGE_TYPE}'
+
+  function findChecklistItem(id) {
+    for (var i = 0; i < TASKS.length; i++) {
+      var t = TASKS[i]
+      if (t.id === id) return t
+      if (t.details && t.details.checklist) {
+        for (var j = 0; j < t.details.checklist.length; j++) {
+          if (t.details.checklist[j].id === id) return t.details.checklist[j]
+        }
+      }
+    }
+    return null
   }
 
-  function pushAlert(message) {
-    var list = document.getElementById('alerts')
-    var li = document.createElement('li')
-    li.className = 'rounded-md border border-slate-800 bg-slate-900 px-3 py-2'
-    li.textContent = message
-    list.insertBefore(li, list.firstChild)
+  function collectState() {
+    var state = {}
+    TASKS.forEach(function (t) {
+      if (t.category === 'errand') state[t.id] = !!t.completed
+      if (t.details && t.details.checklist) {
+        t.details.checklist.forEach(function (ci) { state[ci.id] = !!ci.completed })
+      }
+    })
+    return state
+  }
+
+  // Best-effort: the parent relays this into its own (real-origin)
+  // localStorage — see sandboxStore.ts. Never written directly to this
+  // document's own localStorage, since the sandbox's opaque origin means
+  // that would vanish before the next page load anyway.
+  function persistState() {
+    try {
+      window.parent.postMessage({ type: ITINERARY_STATE_TYPE, state: collectState() }, '*')
+    } catch (e) {}
+  }
+
+  function renderErrands() {
+    var list = document.getElementById('errand-list')
+    list.innerHTML = ''
+    TASKS.filter(function (t) { return t.category === 'errand' }).forEach(function (t) {
+      var li = document.createElement('li')
+      li.className = 'flex items-center gap-2'
+      var meta = t.time ? ' <span class="text-slate-500">(' + t.time + (t.location ? ' · ' + t.location : '') + ')</span>' : ''
+      li.innerHTML = '<input type="checkbox" id="' + t.id + '" class="h-4 w-4 rounded border-slate-700 bg-slate-800"' + (t.completed ? ' checked' : '') + ' />' +
+        '<label for="' + t.id + '" class="' + (t.completed ? 'text-slate-500 line-through' : '') + '">' + t.title + meta + '</label>'
+      list.appendChild(li)
+    })
+    Array.prototype.forEach.call(list.querySelectorAll('input'), function (input) {
+      input.addEventListener('change', function (e) {
+        var t = findChecklistItem(e.target.id)
+        if (t) t.completed = e.target.checked
+        renderErrands()
+        persistState()
+      })
+    })
+  }
+
+  function renderRecipe() {
+    var recipeTask = TASKS.filter(function (t) { return t.category === 'culinary' })[0]
+    var header = document.getElementById('recipe-header')
+    var list = document.getElementById('recipe-checklist')
+    if (!recipeTask) {
+      header.innerHTML = '<p class="text-slate-500">No dinner planned yet.</p>'
+      return
+    }
+
+    var ingredients = (recipeTask.details && recipeTask.details.checklist) || []
+    var haveCount = ingredients.filter(function (i) { return i.completed }).length
+    var readyBanner = ingredients.length > 0 && haveCount === ingredients.length
+      ? '<p class="mt-1 text-xs font-medium text-emerald-400">✅ Ready to cook!</p>'
+      : ''
+    header.innerHTML = '<p class="font-medium">' + recipeTask.title + '</p>' +
+      (recipeTask.details && recipeTask.details.externalUrl
+        ? '<a href="' + recipeTask.details.externalUrl + '" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:underline">🔎 Search for this recipe</a>'
+        : '') +
+      readyBanner
+
+    list.innerHTML = ''
+    ingredients.forEach(function (ing) {
+      var li = document.createElement('li')
+      li.className = 'flex items-center gap-2'
+      li.innerHTML = '<input type="checkbox" id="' + ing.id + '" class="h-4 w-4 rounded border-slate-700 bg-slate-800"' + (ing.completed ? ' checked' : '') + ' />' +
+        '<label for="' + ing.id + '" class="' + (ing.completed ? 'text-slate-500 line-through' : '') + '">' + ing.text + '</label>'
+      list.appendChild(li)
+    })
+    Array.prototype.forEach.call(list.querySelectorAll('input'), function (input) {
+      input.addEventListener('change', function (e) {
+        var item = findChecklistItem(e.target.id)
+        if (item) item.completed = e.target.checked
+        renderRecipe()
+        persistState()
+      })
+    })
+  }
+
+  var entertainmentTask = TASKS.filter(function (t) { return t.category === 'entertainment' })[0]
+
+  function renderEntertainment(matchup) {
+    var el = document.getElementById('entertainment-banner')
+    var providers = entertainmentTask && entertainmentTask.details ? entertainmentTask.details.streamingProvider : ''
+    var time = entertainmentTask ? entertainmentTask.time : ''
+    el.innerHTML = '<span class="font-medium">' + matchup + '</span>' +
+      (time ? ' <span class="text-slate-400">— ' + time + '</span>' : '') +
+      (providers ? '<br><span class="text-slate-400">📺 ' + providers + '</span>' : '')
   }
 
   fetch('https://statsapi.mlb.com/api/v1/schedule?sportId=1')
     .then(function (r) { return r.json() })
     .then(function (data) {
       var game = data.dates && data.dates[0] && data.dates[0].games && data.dates[0].games[0]
-      var away = game ? game.teams.away.team.name : FALLBACK.game.away
-      var home = game ? game.teams.home.team.name : FALLBACK.game.home
-      document.querySelector('#game-card p').innerHTML = '<span class="font-medium">' + away + '</span> @ <span class="font-medium">' + home + '</span>'
-      pushAlert('7:30 PM: ' + away + ' vs ' + home + ' starting on YouTubeTV')
+      var matchup = game
+        ? game.teams.away.team.name + ' @ ' + game.teams.home.team.name
+        : (entertainmentTask ? entertainmentTask.title : "Tonight's Game")
+      renderEntertainment(matchup)
     })
     .catch(function () {
-      document.querySelector('#game-card p').textContent = FALLBACK.game.away + ' @ ' + FALLBACK.game.home + ' (offline fallback)'
+      renderEntertainment(entertainmentTask ? entertainmentTask.title : "Tonight's Game")
     })
 
-  fetch('https://www.themealdb.com/api/json/v1/1/search.php?s=chicken')
-    .then(function (r) { return r.json() })
-    .then(function (data) {
-      var meal = data.meals && data.meals[0]
-      var name = meal ? meal.strMeal : FALLBACK.meal.name
-      var instructions = meal ? meal.strInstructions : FALLBACK.meal.instructions
-      document.querySelector('#meal-card p').innerHTML = '<span class="font-medium">' + name + '</span><br><span class="text-slate-400">' + instructions.slice(0, 90) + '…</span>'
-      pushAlert('5:00 PM: Get groceries for ' + name)
+  // Parent -> child restore, sent once after this document confirms it has
+  // rendered (see sandboxStore.ts) — applies whatever was saved from a
+  // previous visit before this document existed.
+  window.addEventListener('message', function (event) {
+    if (!event.data || event.data.type !== RESTORE_ITINERARY_STATE_TYPE) return
+    var saved = event.data.state || {}
+    TASKS.forEach(function (t) {
+      if (saved[t.id] !== undefined) t.completed = !!saved[t.id]
+      if (t.details && t.details.checklist) {
+        t.details.checklist.forEach(function (ci) {
+          if (saved[ci.id] !== undefined) ci.completed = !!saved[ci.id]
+        })
+      }
     })
-    .catch(function () {
-      document.querySelector('#meal-card p').textContent = FALLBACK.meal.name + ' (offline fallback)'
-    })
-
-  fetch('https://api.open-meteo.com/v1/forecast?latitude=39.29&longitude=-76.61&current_weather=true')
-    .then(function (r) { return r.json() })
-    .then(function (data) {
-      var c = data.current_weather ? data.current_weather.temperature : FALLBACK.weather.tempC
-      var wind = data.current_weather ? data.current_weather.windspeed : FALLBACK.weather.windKph
-      var f = Math.round((c * 9) / 5 + 32)
-      document.querySelector('#weather-card p').innerHTML = '<span class="font-medium">' + f + '°F</span><br><span class="text-slate-400">wind ' + Math.round(wind) + ' km/h</span>'
-    })
-    .catch(function () {
-      var f = Math.round((FALLBACK.weather.tempC * 9) / 5 + 32)
-      document.querySelector('#weather-card p').textContent = f + '°F (offline fallback)'
-    })
-
-  var ERRANDS = ["Get mulch from Lowe's", 'Jiffy Lube inspection', 'Groceries for chicken salad']
-  var list = document.getElementById('errands')
-  ERRANDS.forEach(function (task, i) {
-    var li = document.createElement('li')
-    li.className = 'flex items-center gap-2'
-    li.innerHTML = '<input type="checkbox" id="errand-' + i + '" class="h-4 w-4 rounded border-slate-700 bg-slate-800" /><label for="errand-' + i + '">' + task + '</label>'
-    list.appendChild(li)
-    li.querySelector('input').addEventListener('change', function (e) {
-      if (e.target.checked) pushAlert('Done: ' + task)
-    })
+    renderErrands()
+    renderRecipe()
   })
+
+  renderErrands()
+  renderRecipe()
+  renderEntertainment(entertainmentTask ? entertainmentTask.title : "Tonight's Game")
 </script>`
+}
 
 const B2B_LEAD_SCORING_SNIPPET = `<div class="min-h-screen bg-slate-950 p-6 text-slate-100">
   <div class="mx-auto max-w-2xl">
@@ -435,7 +615,7 @@ export function generateAppSnippet(userPrompt: string, sessionId: string): Gener
       return { scenario, code, policyCheck }
     }
     case 'today-itinerary':
-      return { scenario, code: TODAY_ITINERARY_SNIPPET }
+      return { scenario, code: buildUnifiedItinerarySnippet(DEFAULT_UNIFIED_ITINERARY) }
     case 'b2b-lead-scoring':
       return { scenario, code: B2B_LEAD_SCORING_SNIPPET }
     default:

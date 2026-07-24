@@ -409,3 +409,94 @@ calls `claimSession()`, so a pure-visualization consumer can never accidentally 
   in `Terminal.tsx`'s `handleKeyDown`: Enter now falls through to normal submit behavior once the
   typed text is already an exact command match; Tab still always completes.
 
+---
+
+# 🚀 Architecture Spec: Unified Itinerary & Live App Publishing Engine (Plan C)
+
+## 1. Executive Summary
+NemZilla Studio is evolving from a local micro-app canvas generator into an **AI-Driven Live App Publishing Platform**. Rather than treating Errands (TODO), Recipes (WFD), and Entertainment (TV/Sports) as isolated domain silos, the platform utilizes a **Conversational Intent Aggregator** to synthesize unstructured user goals into a single **Unified Itinerary Micro-App**.
+
+Furthermore, users can deploy their generated apps to a persistent, mobile-optimized public URL (`agentz.nemzilla.net/share/:slug`) with an instant QR code, allowing them to take their interactive checklists on the go.
+
+---
+
+## 2. Intent Aggregator & Schema Model
+
+### 2.1 Conversational Refinement (Plan C Model)
+- **Studio Level (Conversational Dry Erase):** The AI PO acts as the primary CRUD interface. Users add, modify, or swap tasks by chatting with the PO (e.g., *"Delete Lowe's and add a Target run for school supplies"*). The PO updates the payload under the same persistent deployment slug.
+- **Published Edge Level (Interactive Checklists):** The deployed mobile view allows real-time interactive toggles (checking off grocery items or completed errands) with local state persisted via browser `localStorage`.
+
+### 2.2 Unified Itinerary Schema (`UnifiedItineraryPayload`)
+```typescript
+export interface ItineraryTask {
+  id: string;
+  category: 'errand' | 'culinary' | 'entertainment';
+  title: string;
+  time?: string;
+  location?: string;
+  details?: {
+    checklist?: Array<{ id: string; text: string; completed: boolean }>;
+    externalUrl?: string; // Recipe link (e.g., Paula Deen Chicken Salad)
+    streamingProvider?: string; // e.g., Peacock, YouTubeTV
+    notes?: string;
+  };
+}
+
+export interface UnifiedItineraryPayload {
+  slug: string;
+  title: string;
+  date: string;
+  createdAt: string;
+  updatedAt: string;
+  tasks: ItineraryTask[];
+}
+```
+
+## 3. Infrastructure & Edge Publishing Flow
+
+- Synthesis: AI PO generates the single-file HTML/Tailwind/vanilla-JS web app bundle in AppPreview.tsx.
+- Publish Action: User clicks 🚀 Publish Live App in the studio toolbar.
+- Payload Storage: Server stores the payload in a lightweight KV/JSON store mapped to slug.
+- Edge Route (/share/:slug): Serves the standalone, mobile-responsive HTML application with full CORS and zero-auth read access.
+- QR Code Modal: Studio generates a scannable QR code linking directly to agentz.nemzilla.net/share/:slug
+
+---
+
+### Implementation Status (UOW-18)
+
+The schema in §2.2 and the Unified Itinerary Synthesizer described above are **built and shipped**;
+§3's edge-publishing flow (`slug`-addressable persistent deploys, `/share/:slug`, QR codes,
+conversational CRUD editing of a live payload) is **still aspirational** — noted here explicitly so
+this section doesn't read as already delivered.
+
+- **`src/types/itinerary.ts`:** `UnifiedItineraryPayload`/`ItineraryTask` exactly as specified in
+  §2.2 above (kept in sync deliberately, not reinvented) — shared across the browser/server tsconfig
+  boundary via `tsconfig.node.json`'s established `actionKit.ts`/`templateRegistry.ts`-style explicit
+  include.
+- **`src/server/prompts/appGeneratorPrompt.ts`'s `buildUnifiedItinerarySnippet()`:** replaces the old
+  `TODAY_ITINERARY_SNIPPET` static const (same `'today-itinerary'` scenario id, same `matchScenario()`
+  keyword routing — no new scenario needed) with a real synthesizer over a `UnifiedItineraryPayload`.
+  Renders the 3-section merge: **top** — errand tasks with interactive checkboxes; **middle** — the
+  active recipe card (Paula Deen Pecan Chicken Salad) with a real 7-item ingredient checklist and a
+  real recipe-search link (not a guessed specific article URL — no exact URL was given, and TheMealDB,
+  this project's only existing live recipe API, is generic/user-submitted rather than
+  celebrity-chef-branded, so it was never going to actually return this dish); **bottom** — an evening
+  entertainment banner combining a genuinely live MLB Stats API fetch (game matchup/time — the one
+  live-data integration kept from the original itinerary snippet) with a synthetic streaming-provider
+  list (no free live "is this on Peacock" API exists).
+- **Local state persistence — a real architectural constraint, not an oversight:** `sandboxFrame.ts`'s
+  iframe is deliberately `sandbox="allow-scripts"` with `allow-same-origin` omitted (§5) specifically
+  so generated apps can't touch the host site's real cookies/storage. Per the HTML sandboxing spec,
+  that also means the sandboxed document gets a *fresh, unique opaque origin on every load* — anything
+  written to `localStorage` *inside* the iframe would already be unreachable the next time the same
+  app is generated, so "persists across refreshes" is unachievable via iframe-internal `localStorage`
+  as literally stated, and weakening the sandbox to add `allow-same-origin` would hand the generated
+  app real access to the parent site's own storage/cookies (defeating the isolation boundary §5 exists
+  for). Implemented instead via the same postMessage-relay pattern the order-decision flow (§7)
+  already established: the child posts its full checkbox state to the parent
+  (`SANDBOX_MESSAGE.itineraryState`) on every toggle; the parent (a real, stable origin) persists it to
+  its own `localStorage` and relays it back (`SANDBOX_MESSAGE.restoreItineraryState`) once the child
+  confirms `rendered` on any future load. Verified end-to-end: checking boxes, relaunching the preview,
+  and confirming the same boxes come back checked.
+
+

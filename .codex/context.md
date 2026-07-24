@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-17 - Pass E Kickstart: Multi-Agent Swarm Catalog (templateRegistry.ts & Domain Switcher)
-- **Active Task**: UOW-17 complete — ready for next UOW
+- **Current UOW**: UOW-18 - Plan C Kickstart: Unified Itinerary Synthesizer
+- **Active Task**: UOW-18 complete — ready for next UOW
 
 ---
 
@@ -735,4 +735,68 @@ UOW-12's note above instead, and is unrelated to this one.)_
       per serving") — confirming the overlay has a real, measurable effect on the model's behavior,
       not just wiring that compiles. Zero console errors throughout.
 - **UOW-17 complete.** All 4 Pass E kickstart directives shipped, plus the palette bug fix.
+
+## [x] UOW 18 - Plan C Kickstart: Unified Itinerary Synthesizer
+
+_(Note: a fuller "Plan C" architecture spec — Unified Itinerary & Live App Publishing Engine,
+including edge-publishing to `/share/:slug` with QR codes — was independently drafted directly into
+`.codex/AGENTZ-STUDIO-SDK.md` outside this tracker, apparently via a separate Gemini planning session
+the user ran in parallel (an untracked `.codex/gemini-rehydrate-context-block-*.md` file appeared
+alongside it). This UOW implements only the schema/synthesizer/persistence slice actually requested
+in chat — the edge-publishing/QR/slug infrastructure remains aspirational, explicitly marked as such
+in the SDK doc rather than silently claimed as built._
+
+- [x] Task 18.1: **Schema & Types.** New `src/types/itinerary.ts` — `UnifiedItineraryPayload`/
+      `ItineraryTask` built to match the schema already committed to the SDK doc's Plan C spec
+      (category discriminator `'errand' | 'culinary' | 'entertainment'`, nested `details` for
+      checklist/externalUrl/streamingProvider/notes) rather than a divergent shape invented fresh —
+      kept in sync deliberately. Shared across the browser/server tsconfig boundary via
+      `tsconfig.node.json`'s established explicit-include pattern (`actionKit.ts`/
+      `templateRegistry.ts`).
+- [x] Task 18.2: **Synthesizer Engine.** `appGeneratorPrompt.ts`'s `buildUnifiedItinerarySnippet()`
+      replaces the old static `TODAY_ITINERARY_SNIPPET` const (same `'today-itinerary'` scenario id
+      and `matchScenario()` routing — no new scenario needed) with a real function over a
+      `UnifiedItineraryPayload`, rendering the requested 3-section merge: top — errand tasks with
+      interactive checkboxes; middle — the active recipe card (Paula Deen Pecan Chicken Salad) with
+      a real 7-item ingredient checklist; bottom — an entertainment banner combining a genuinely
+      live MLB Stats API fetch (kept from the original snippet) with a synthetic streaming-provider
+      list. The recipe's `externalUrl` is a real Google search-results link rather than a guessed
+      specific article URL — no exact URL was given, and TheMealDB (this project's only existing
+      live recipe API) is generic/user-submitted, not celebrity-chef-branded, so faking a specific
+      match would have been worse than a real, working search link. All payload text is
+      HTML-escaped before embedding (the function is a general synthesizer, not just a static
+      template, so future callers may feed it AI/PO-derived content the same way
+      `swarmCodeSynthesizer.ts` already treats interview data as untrusted).
+- [x] Task 18.3: **Local State Persistence — architectural constraint found and correctly worked
+      around, not silently skipped.** The literal ask ("iframe JS saves checkbox toggles to browser
+      localStorage") can't actually deliver "persists across page refreshes" as stated:
+      `sandboxFrame.ts`'s iframe is deliberately `sandbox="allow-scripts"` with `allow-same-origin`
+      omitted specifically so generated apps can't touch the host site's real storage/cookies — but
+      per the HTML sandboxing spec, that also means the sandboxed document gets a fresh, unique
+      opaque origin on every load, so anything written to `localStorage` *inside* the iframe would
+      already be unreachable the next time the same app is generated. Implemented instead via the
+      same postMessage-relay pattern the order-decision flow already established
+      (`SANDBOX_MESSAGE.itineraryState`/`restoreItineraryState`, new in `sandboxTemplate.ts`): the
+      child posts its full checkbox state to the parent on every toggle; the parent (a real, stable
+      origin, `sandboxStore.ts`) persists it to its own `localStorage` and relays it back once the
+      child confirms `rendered` on any future load — genuine cross-refresh persistence without
+      weakening the sandbox's security boundary.
+- [x] Task 18.4: **Branding Enforcements.** The synthesized snippet's own header uses `✨` (no
+      CLI/terminal framing anywhere in the generated app's copy either).
+- **Real bug caught by `tsc -b` (not `tsc --noEmit`):** a literal backtick inside a code comment
+      (`` `rendered` ``) inside the new function's returned template literal prematurely closed that
+      outer JS template string, corrupting everything after it. `npx tsc --noEmit` alone reported
+      clean — because the root `tsconfig.json` has an empty `files` array and delegates entirely to
+      its two project references, so a bare `--noEmit` invocation checks nothing at all. `npx tsc -b`
+      (the project-references mode this repo's own `npm run build` actually uses) caught it
+      immediately. Both are now run for any verification claim, not just the literal command asked
+      for.
+- **Verification:** `tsc -b`/`npm run build`/`npm run test:sse` all clean. Full production-mode
+      Playwright pass confirmed every section of the synthesized snippet renders correctly
+      (including the live MLB fetch returning a real matchup), and — the critical check — checking
+      two boxes, relaunching the exact same preview, and confirming both checkboxes came back
+      checked, proving the parent-relay persistence genuinely works end-to-end rather than being
+      wiring that merely compiles. Zero console errors.
+- **UOW-18 complete.** All 4 Plan-C-kickstart tasks shipped, with the sandbox/localStorage tension
+      surfaced and resolved rather than either ignored or used to silently weaken the sandbox.
 

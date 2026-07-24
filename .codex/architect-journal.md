@@ -780,6 +780,34 @@
   overlay producing genuinely dinner-flavored PO phrasing — not just wiring that compiles.
 - **UOW-17 complete.** All 4 Pass E kickstart directives shipped, plus the palette bug fix.
 
+### UOW-18 Sync — Plan C Kickstart: Unified Itinerary Synthesizer — 2026-07-24
+- **Schema:** `src/types/itinerary.ts` — `UnifiedItineraryPayload`/`ItineraryTask` built to match the
+  schema a separate, parallel "Plan C" planning session (apparently run in Gemini — an untracked
+  rehydrate-context file appeared alongside it) had already written directly into
+  `AGENTZ-STUDIO-SDK.md`, rather than inventing a divergent shape. Shared across the browser/server
+  tsconfig boundary the established `actionKit.ts`/`templateRegistry.ts` way.
+- **Synthesizer:** `appGeneratorPrompt.ts`'s `buildUnifiedItinerarySnippet()` replaces the old static
+  itinerary snippet with a real function merging errands/recipe/entertainment into one app — top:
+  errand checkboxes; middle: the Paula Deen Pecan Chicken Salad recipe card with a real 7-item
+  ingredient checklist and a real search link (no specific URL was given, so a real search link beats
+  guessing one); bottom: a live MLB-fetched matchup + synthetic streaming-provider list.
+- **The interesting part — local persistence vs. the sandbox's own security model:** the literal ask
+  (iframe JS writes checkbox state to its own `localStorage`) can't deliver "persists across
+  refreshes" as stated, because the iframe's `sandbox="allow-scripts"` (no `allow-same-origin`, by
+  design) gives it a fresh opaque origin every load — anything it wrote to its own storage is already
+  gone next time. Implemented the equivalent of what was actually wanted via the same postMessage-
+  relay pattern the order-decision flow already uses: child posts state to the parent, the parent's
+  real, stable origin persists and relays it back on the next render. Verified end-to-end: check two
+  boxes, relaunch the same preview, both come back checked.
+- **A real bug `tsc --noEmit` alone would have missed:** a stray backtick inside a code comment
+  prematurely closed the outer template literal it was embedded in. `tsc --noEmit` reported clean
+  because the root tsconfig has an empty `files` array and does nothing on its own; `tsc -b` (what
+  `npm run build` actually runs) caught it immediately. Both now get run for any verification claim.
+- **Verification:** `tsc -b`/`build`/`test:sse` clean; full production-mode Playwright pass confirmed
+  every section renders (including the live MLB fetch) and the persistence relay genuinely survives a
+  full preview relaunch. Zero console errors.
+- **UOW-18 complete.**
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

@@ -195,9 +195,36 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
     }, (err) => console.error('sandboxStore: order event relay failed', err))
   }
 
+  const ITINERARY_STORAGE_KEY = 'nemzilla-studio:itinerary-state'
+
+  /** Persists the Unified Itinerary snippet's checkbox state to this (real-origin) page's own localStorage — see SANDBOX_MESSAGE.itineraryState's doc comment for why this can't happen inside the sandboxed iframe itself. */
+  function persistItineraryState(state: unknown) {
+    try {
+      localStorage.setItem(ITINERARY_STORAGE_KEY, JSON.stringify(state))
+    } catch (err) {
+      console.error('sandboxStore: failed to persist itinerary state', err)
+    }
+  }
+
+  /** Sent once the child confirms it has fully rendered — restoring any earlier state right after `code` would race the child's own listener setup post-document.write(). */
+  function restoreItineraryState() {
+    if (!frame?.contentWindow) return
+    let saved: unknown = null
+    try {
+      const raw = localStorage.getItem(ITINERARY_STORAGE_KEY)
+      saved = raw ? JSON.parse(raw) : null
+    } catch (err) {
+      console.error('sandboxStore: failed to read saved itinerary state', err)
+    }
+    if (!saved) return
+    frame.contentWindow.postMessage({ type: SANDBOX_MESSAGE.restoreItineraryState, state: saved }, '*')
+  }
+
   function onMessage(event: MessageEvent) {
     if (!frame || event.source !== frame.contentWindow) return
-    const data = event.data as { type?: string; message?: string; sessionId?: unknown; total?: unknown; decision?: unknown } | undefined
+    const data = event.data as
+      | { type?: string; message?: string; sessionId?: unknown; total?: unknown; decision?: unknown; state?: unknown }
+      | undefined
     switch (data?.type) {
       case SANDBOX_MESSAGE.ready:
         frameReady = true
@@ -205,6 +232,7 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
         break
       case SANDBOX_MESSAGE.rendered:
         setState({ status: 'ready', errorMessage: null })
+        restoreItineraryState()
         break
       case SANDBOX_MESSAGE.error:
         setState({ status: 'error', errorMessage: data.message ?? 'Unknown runtime error' })
@@ -212,6 +240,9 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
       case SANDBOX_MESSAGE.order:
         playOrderTrajectory(typeof data.total === 'number' ? data.total : 0, typeof data.decision === 'string' ? data.decision : '')
         relayOrderEvent(data)
+        break
+      case SANDBOX_MESSAGE.itineraryState:
+        persistItineraryState(data.state)
         break
     }
   }

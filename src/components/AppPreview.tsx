@@ -6,6 +6,8 @@ import { activeTemplateId, getActiveTemplate } from '../lib/templateStore.ts'
 import SaveRecipeModal from './SaveRecipeModal.tsx'
 import PublishModal from './PublishModal.tsx'
 import ArtifactsPanel from './ArtifactsPanel.tsx'
+import PanelHelpButton from './PanelHelpButton.tsx'
+import { visitorState } from '../lib/visitorStore.ts'
 
 const DEFAULT_PROMPT = 'ACME Order'
 
@@ -63,9 +65,31 @@ export default function AppPreview() {
   return (
     <section
       data-testid="app-preview"
-      class="w-full max-w-2xl rounded-lg border border-border bg-surface text-left shadow-lg"
+      class="relative w-full max-w-2xl rounded-lg border border-border bg-surface text-left shadow-lg"
     >
-      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+      {/*
+        Pinned to the section's own corner rather than embedded in the header
+        row below: that row is `flex-wrap` (Save/Publish only render once a
+        build is `ready`, so its content width varies), and an inline help
+        button there would wrap onto its own line under realistic widths,
+        landing mid-panel instead of top-right — exactly the kind of
+        "looks fine when ready, breaks while building" bug that's easy to
+        miss without actually loading the page.
+      */}
+      <div class="absolute right-3 top-2">
+        <PanelHelpButton title="App Preview">
+          <p>
+            The generated micro-app itself, running live in an isolated sandbox — plus its raw
+            source and full run telemetry in the other two tabs.
+          </p>
+          <p class="mt-1.5">
+            Once a build is ready, publish it as a real shareable link with "🚀 Publish Live App", or
+            use "🎯 Preview this domain" to see the active template's own demo.
+          </p>
+        </PanelHelpButton>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2 pl-4 pr-10">
         <div class="flex flex-wrap gap-1">
           <For each={TABS}>
             {(tab) => (
@@ -142,14 +166,39 @@ export default function AppPreview() {
         </div>
       </Show>
 
-      <div class="h-80" classList={{ hidden: sandbox.state.tab !== 'preview' }}>
-        <iframe
-          ref={frameRef}
-          src={SANDBOX_FRAME_PATH}
-          sandbox="allow-scripts"
-          title="App sandbox preview"
-          class="h-full w-full rounded-b-lg bg-white"
-        />
+      {/*
+        UAT fix: the sandboxed preview now renders inside a mock device
+        shell (status bar + rounded device border) rather than a bare
+        iframe, so App Preview reads as "a phone showing your app" instead
+        of "an embedded webpage." The status bar's time is deliberately a
+        static mock (matching the classic App Store screenshot convention),
+        not a live clock — this is chrome, not a feature. No new scroll
+        container is introduced (the iframe still just fills the frame's
+        remaining height), so there's still exactly one scrollbar: whatever
+        the generated app's own document produces internally.
+      */}
+      <div class="h-80 bg-bg p-3" classList={{ hidden: sandbox.state.tab !== 'preview' }}>
+        <div class="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900/90 shadow-2xl">
+          <div class="flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-[10px] font-medium text-slate-300">
+            <span class="font-mono">9:41</span>
+            <div class="flex items-center gap-2">
+              <span aria-hidden="true">📶</span>
+              <span aria-hidden="true">🔋</span>
+              <span class="rounded-full border border-slate-600 bg-slate-800 px-2 py-0.5 text-slate-200">
+                👤 {visitorState.identity?.handle ?? 'Visitor'}
+              </span>
+            </div>
+          </div>
+          <div class="min-h-0 flex-1 overflow-hidden bg-white">
+            <iframe
+              ref={frameRef}
+              src={SANDBOX_FRAME_PATH}
+              sandbox="allow-scripts"
+              title="App sandbox preview"
+              class="h-full w-full"
+            />
+          </div>
+        </div>
       </div>
 
       <div

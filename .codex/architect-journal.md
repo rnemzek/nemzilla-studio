@@ -929,6 +929,30 @@
   persisted flag; and the "✕" dismisses cleanly. Zero new console errors.
 - **UOW-23 complete.**
 
+### UOW-24 Sync — UAT Feedback Pass: Always-On Exec Summary, Panel Help Pop-overs, App Preview Device Frame — 2026-07-24
+- **Always-on Exec Summary:** removed `executiveShowcaseStore.ts`'s `localStorage` gate entirely —
+  `showcaseOpen` now always initializes `true`, so a refresh or new tab always re-shows the pitch;
+  dismiss/reopen only ever affects the in-memory signal for that page session.
+- **Panel help pop-overs:** new shared `PanelHelpButton.tsx` (same fixed-inset-0-click-outside shape
+  as `CookbookDropdown.tsx`'s popover) wired into all four main panels with panel-specific copy.
+  Caught and fixed two real layout bugs during verification, not shipped silently: (1) App Preview's
+  button, first placed inline in a `flex-wrap` row that wraps while building, landed mid-panel instead
+  of top-right — fixed with `absolute right-3 top-2` pinned to the section itself; (2) that fix's own
+  `z-10` wrapper created a new stacking context capping the popover's internal `z-20` backdrop below
+  the sticky header's own `z-20`, so closing it via outside-click silently failed and blocked the next
+  panel's button in sequence — fixed by dropping the unneeded `z-10`.
+- **App Preview device frame:** the preview tab's iframe now renders inside a mock device shell — a
+  status bar (static "9:41" mock time, signal/battery icons, `👤 {real visitor handle}` avatar pill)
+  above the iframe, styled `rounded-2xl border border-slate-700/80 bg-slate-900/90 shadow-2xl` exactly
+  as specified. No new scroll container introduced — still exactly one scrollbar (the generated app's
+  own), not a double one.
+- **Verification:** `tsc -b`/`build` (as requested) both clean. Full production-mode Playwright pass
+  plus real screenshots confirmed: modal shows on load even with the old "seen" flag preset, and shows
+  again after a real reload; all four panels' popovers open correctly in sequence (the exact
+  regression the stacking-context fix addressed); device frame classes/mock time/avatar pill all
+  correct; no scrollbar on the frame itself. Zero new console errors.
+- **UOW-24 complete.**
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

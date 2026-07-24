@@ -6,6 +6,7 @@ import { replayState, stopReplay, togglePlay, stepForward, stepBack, setSpeed } 
 import { activeTemplateId, getActiveTemplate } from '../lib/templateStore.ts'
 import type { AuditBlock } from '../lib/auditStore.ts'
 import RnAvatar from './RnAvatar.tsx'
+import PanelHelpButton from './PanelHelpButton.tsx'
 
 const WIDTH = 480
 const HEIGHT = 220
@@ -322,6 +323,16 @@ export default function SwarmCanvas() {
           <Show when={inReplay()}>
             <span class="text-[10px] font-medium uppercase tracking-wide text-accent">Replay Mode</span>
           </Show>
+          <PanelHelpButton title="Swarm Canvas">
+            <p>
+              A live view of the multi-agent pipeline — Planner, Architect, Lead Dev, and Reviewer (plus
+              the AI PO and a Policy check when relevant) — each node pulses as that agent actually runs.
+            </p>
+            <p class="mt-1.5">
+              Watch it during a build to see the pipeline execute in real time, or use Replay Mode to
+              step back through a completed run one action at a time.
+            </p>
+          </PanelHelpButton>
         </div>
       </div>
 

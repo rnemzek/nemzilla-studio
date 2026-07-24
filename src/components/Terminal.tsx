@@ -4,6 +4,7 @@ import { runCommand, SLASH_COMMANDS, type OutputKind, type SlashCommandInfo } fr
 import { interviewState } from '../lib/interviewStore.ts'
 import { visitorState } from '../lib/visitorStore.ts'
 import RnAvatar from './RnAvatar.tsx'
+import PanelHelpButton from './PanelHelpButton.tsx'
 
 interface TerminalLine {
   id: number
@@ -240,6 +241,18 @@ export default function Terminal() {
           }}
         />
         <span class="ml-2">AgentZ</span>
+        <div class="ml-auto">
+          <PanelHelpButton title="AgentZ Chat">
+            <p>
+              Your conversational entry point — free text goes straight to the AI PO discovery
+              interview, which gathers what you want built (an Order Entry or Unified Itinerary app).
+            </p>
+            <p class="mt-1.5">
+              Type "/" for the slash-command palette (build, template, launch, and more), or just
+              answer the AI PO's questions until it's ready to build.
+            </p>
+          </PanelHelpButton>
+        </div>
       </div>
 
       <Show when={!minimized()}>

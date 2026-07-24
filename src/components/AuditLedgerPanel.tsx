@@ -1,5 +1,6 @@
 import { For, createEffect, onCleanup, onMount } from 'solid-js'
 import { auditStore, type ChainStatus, type PolicyStatus } from '../lib/auditStore.ts'
+import PanelHelpButton from './PanelHelpButton.tsx'
 
 const CHAIN_STATUS_LABEL: Record<ChainStatus, string> = {
   pending: 'verifying…',
@@ -48,9 +49,21 @@ export default function AuditLedgerPanel() {
     >
       <div class="flex items-center justify-between border-b border-border px-4 py-2">
         <span class="text-xs uppercase tracking-wide text-text-muted">Audit Ledger</span>
-        <span class={`font-mono text-xs ${CHAIN_STATUS_CLASS[audit.state.chainStatus]}`}>
-          {CHAIN_STATUS_LABEL[audit.state.chainStatus]}
-        </span>
+        <div class="flex items-center gap-2">
+          <span class={`font-mono text-xs ${CHAIN_STATUS_CLASS[audit.state.chainStatus]}`}>
+            {CHAIN_STATUS_LABEL[audit.state.chainStatus]}
+          </span>
+          <PanelHelpButton title="Audit Ledger">
+            <p>
+              The governance trail — every agent step, policy check, and generated payload is logged
+              here as an immutable, hash-chained record, verified as it grows.
+            </p>
+            <p class="mt-1.5">
+              Scroll to see the full history in order, and check the status badge above for the
+              chain's overall verification state.
+            </p>
+          </PanelHelpButton>
+        </div>
       </div>
 
       <div ref={scrollRef} class="h-80 overflow-y-auto px-4 py-3 font-mono text-xs">

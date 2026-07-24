@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-23 - Executive Product Showcase Overlay / Drawer for Recruiters & Product Owners
-- **Active Task**: UOW-23 complete — ready for next UOW
+- **Current UOW**: UOW-24 - UAT Feedback Pass: Always-On Exec Summary, Panel Help Pop-overs, App Preview Device Frame
+- **Active Task**: UOW-24 complete — ready for next UOW
 
 ---
 
@@ -1047,4 +1047,48 @@ in the SDK doc rather than silently claimed as built._
 - **UOW-23 complete.** The executive pitch shows automatically to first-time visitors, is reachable
       any time from the header, and both action buttons behave exactly as specified — verified live,
       not just compiled.
+
+## [x] UOW 24 - UAT Feedback Pass: Always-On Exec Summary, Panel Help Pop-overs, App Preview Device Frame
+
+- [x] Task 24.1 (Always-On Executive Summary): `executiveShowcaseStore.ts`'s `localStorage`
+      `agentz_executive_seen` gate removed entirely — `showcaseOpen` now always initializes `true`.
+      A refresh or new tab always re-presents the pitch; dismissing/reopening only ever changes the
+      in-memory signal for that page session, nothing persists across a real reload anymore.
+- [x] Task 24.2 (Panel Help Pop-overs): new shared `PanelHelpButton.tsx` — a small "?" trigger +
+      lightweight popover (same fixed-inset-0-click-outside-to-close shape as `CookbookDropdown.tsx`'s
+      own popover), wired into all four main panels (`SwarmCanvas.tsx`, `Terminal.tsx`,
+      `AppPreview.tsx`, `AuditLedgerPanel.tsx`) with panel-specific copy covering what it does, its
+      role in the ecosystem, and how to interact with it.
+      - **Bug caught during verification, not left in:** App Preview's help button was first placed
+        inline inside its header's `flex-wrap` status cluster — which wraps onto its own line while a
+        build is in progress (Save/Publish only render once `ready`, varying that row's width), landing
+        the button and its popover mid-panel instead of top-right, overlapping the Terminal panel to
+        its left. Fixed by pinning it as an `absolute right-3 top-2` element on the section itself,
+        decoupled from that row's wrap state entirely — verified this didn't just look right but that
+        the popover's full-viewport backdrop still closes on outside-click. A second, subtler bug
+        surfaced from the first fix's own `z-10` wrapper: it created a new stacking context that capped
+        the popover's internal `z-20` backdrop below the sticky header's own `z-20`, so a click meant to
+        close it landed on the header instead, leaving it stuck open and blocking the NEXT panel's help
+        button in the verification script. Fixed by dropping the unnecessary `z-10` — the wrapper needs
+        no z-index of its own to paint above in-flow content.
+- [x] Task 24.3 (App Preview Device Frame): the "App Preview" tab's iframe container now renders inside
+      a mock device shell — a status bar (static "9:41" mock time matching the classic App Store
+      screenshot convention, signal/battery icons, and a `👤 {visitor handle}` avatar pill using the
+      real live visitor identity already tracked by `visitorStore.ts`) above the iframe, the whole
+      thing styled `rounded-2xl border border-slate-700/80 bg-slate-900/90 shadow-2xl` exactly as
+      specified. No new scrollable wrapper introduced — the iframe still just fills the frame's
+      remaining height, so there's exactly one scrollbar (whatever the generated app's own document
+      produces), not a double one.
+- **Verification:** `npx tsc -b` and `npm run build` (as requested) both clean. Full production-mode
+      Playwright pass (this project's standing convention) plus real screenshots (not just DOM
+      assertions, given this is a visual/UX-heavy task): the modal shows on load even with the old
+      "seen" flag pre-set in `localStorage`, and shows AGAIN after a real page reload; all four panels'
+      "?" buttons open their popovers with the correct title, in sequence, without one panel's popover
+      getting stuck open and blocking the next (the exact regression the z-10 fix above addressed);
+      the device frame's classes, mock time, and avatar pill all render correctly; and a direct DOM
+      check confirmed the device frame has no scrollbar of its own. Zero new console errors.
+- **UOW-24 complete.** All three UAT items shipped, with two real layout bugs (the flex-wrap
+      mispositioning and the stacking-context z-index trap) caught and fixed during verification
+      rather than shipped silently, both invisible from source alone and only found by actually
+      loading the page.
 

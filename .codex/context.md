@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-21 - UAT Fix: Guided Banner → Collapsible Top Drawer & Viewport Layout Fix
-- **Active Task**: UOW-21 complete — ready for next UOW
+- **Current UOW**: UOW-22 - Proactive AI PO System Prompt & Interactive Task Strikethrough
+- **Active Task**: UOW-22 complete — ready for next UOW
 
 ---
 
@@ -954,4 +954,60 @@ in the SDK doc rather than silently claimed as built._
       test's own `page.reload()` call).
 - **UOW-21 complete.** Both requirements shipped, with the fix applied at the actual structural root
       cause (the banner's coupling to a centered flex column) rather than as a padding patch.
+
+## [x] UOW 22 - Proactive AI PO System Prompt & Interactive Task Strikethrough
+
+- **File-attribution correction:** the kickoff prompt named `appGeneratorPrompt.ts` as the home for
+      Part 1's PO conversation guidance, but that file only holds the Dev agent's build prompt
+      (`buildAppGeneratorSystemPrompt()`) and the app-snippet synthesizer — it has no PO conversational
+      text in it at all. The AI PO's actual system prompt is `poInterviewLLM.ts`'s `SYSTEM_PROMPT`
+      (with per-domain flavor layered in from `templateRegistry.ts`'s `systemPromptOverlay`s). Part 1
+      was implemented there instead, since that's the prompt that actually governs the interview.
+- [x] Task 22.1 (Explicit Dual-Path Greeting): added a dedicated greeting rule to `SYSTEM_PROMPT` —
+      on the very first turn of a brand-new interview (no prior transcript), the PO opens by naming
+      both build paths explicitly (Order Entry B2B/E-Commerce, or Unified Itinerary Day/Meal Planner)
+      before asking what the visitor wants. Scoped to the first turn only and never repeated — kept
+      deliberately separate from UOW-20's domain-neutral, natural-language-routing rule (which still
+      governs every turn once the greeting is done), so the explicit dual-path framing doesn't regress
+      the earlier fix for the "to-do list" → "order-entry" mis-routing bug.
+- [x] Task 22.2 (Proactive Nudges): added a "Proactive nudges" rule permitting at most ONE volunteered
+      suggestion per turn, gated on the vendorName/day-name already being known (never nudging blind)
+      and always dropped silently if ignored (never blocking `done`):
+      - Itinerary path: offer live TV/sports/movie plans for the evening, or offer to parse a recipe's
+        ingredients into the shopping/pantry checklist.
+      - Order-entry path: recognize a retail category from the vendor name and offer seeded item
+        suggestions (e.g. sporting goods → Dick's-style items); separately, once a couple of priced
+        catalog items exist, propose a threshold discount rule alongside the HITL threshold.
+      Placed in the domain-neutral base prompt (not per-template overlays) so nudges fire from natural
+      language alone, consistent with UOW-20's decoupling of domain framing from explicit `/template`.
+- [x] Task 22.3 (Interactive Strikethrough): `buildUnifiedItinerarySnippet()` (`appGeneratorPrompt.ts`)
+      — checked items now get `transition-all line-through opacity-50` on their `<label>` (was a bare
+      `text-slate-500 line-through`), applied identically to both the errand list and the recipe
+      ingredient checklist via a shared `completionLabelClass()` helper.
+- [x] Task 22.4 (Progress Badge): new `#progress-badge` element next to the itinerary's `<h1>`,
+      updated live by `updateProgressBadge()` — counts every checkable item across BOTH the errand
+      list and the recipe checklist as one combined "3/9 Completed" readout, called from both
+      `renderErrands()`/`renderRecipe()`'s change handlers and the initial-load/restore paths.
+- [x] Task 22.5 (Dual Persistence): no changes needed — the existing `persistState()`/`applyState()`/
+      `localStorage` dual-path (parent-relay for the sandboxed iframe, direct own-origin storage for
+      standalone `/share/:slug`, built in Plan C) already covered the new badge/strikethrough state
+      the same way it covered checkbox state before; verified rather than re-built.
+- **Verification:** `npx tsc -b` and `npm run test:sse` (as requested) both clean. Additionally ran a
+      full production-mode Playwright pass covering both required contexts (not explicitly requested,
+      but this project's standing convention for any behavioral change):
+      - **Sandboxed iframe** (driven through the real Studio UI via the Cookbook preset launcher, with
+        an extra buffer after "ready" to avoid the documented single-active-builder race): initial
+        badge read `0/9 Completed`; checking the first errand item applied
+        `transition-all line-through opacity-50` and updated the badge to `1/9 Completed`.
+      - **Standalone `/share/:slug`** (a real published page, via `/api/publish`): initial badge
+        `0/9 Completed`; checking two recipe ingredients updated the badge to `2/9 Completed` with the
+        strikethrough classes applied; **a real page reload correctly restored both the checked state
+        and the badge count** (`2/9 Completed` persisted, strikethrough intact) — confirming the
+        own-origin `localStorage` path still works end-to-end with the new UI.
+      - Zero new console errors (the one message seen was the same pre-existing, already-documented
+        `auditStore.ts` reload artifact from UOW-15/21, not a regression).
+- **UOW-22 complete.** Both parts shipped — the PO personality change landed in its actual home
+      (`poInterviewLLM.ts`) rather than the file named in the kickoff prompt, and the itinerary's
+      strikethrough/progress-badge behavior was verified live in both the sandboxed and standalone
+      persistence contexts, not just compiled.
 

@@ -319,7 +319,10 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
 
   return `<div class="min-h-screen bg-slate-950 p-6 text-slate-100">
   <div class="mx-auto max-w-3xl">
-    <h1 class="text-2xl font-bold">✨ ${safeTitle}</h1>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h1 class="text-2xl font-bold">✨ ${safeTitle}</h1>
+      <span id="progress-badge" class="whitespace-nowrap rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 transition-all">0/0 Completed</span>
+    </div>
     <p class="mt-1 text-sm text-slate-400">Unified Itinerary Synthesizer — errands, dinner, and tonight's entertainment in one plan.</p>
 
     <div class="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
@@ -416,6 +419,32 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
     }
   }
 
+  // Progress badge covers every checkable item across the whole itinerary
+  // (errands + recipe ingredients) — one live "3/5 Completed" readout rather
+  // than a separate counter per section, so it reads as a single plan.
+  function updateProgressBadge() {
+    var total = 0
+    var completed = 0
+    TASKS.forEach(function (t) {
+      if (t.category === 'errand') {
+        total += 1
+        if (t.completed) completed += 1
+      }
+      if (t.details && t.details.checklist) {
+        t.details.checklist.forEach(function (ci) {
+          total += 1
+          if (ci.completed) completed += 1
+        })
+      }
+    })
+    var badge = document.getElementById('progress-badge')
+    if (badge) badge.textContent = completed + '/' + total + ' Completed'
+  }
+
+  function completionLabelClass(isCompleted) {
+    return isCompleted ? 'transition-all line-through opacity-50' : 'transition-all'
+  }
+
   function renderErrands() {
     var list = document.getElementById('errand-list')
     list.innerHTML = ''
@@ -424,7 +453,7 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
       li.className = 'flex items-center gap-2'
       var meta = t.time ? ' <span class="text-slate-500">(' + t.time + (t.location ? ' · ' + t.location : '') + ')</span>' : ''
       li.innerHTML = '<input type="checkbox" id="' + t.id + '" class="h-4 w-4 rounded border-slate-700 bg-slate-800"' + (t.completed ? ' checked' : '') + ' />' +
-        '<label for="' + t.id + '" class="' + (t.completed ? 'text-slate-500 line-through' : '') + '">' + t.title + meta + '</label>'
+        '<label for="' + t.id + '" class="' + completionLabelClass(t.completed) + '">' + t.title + meta + '</label>'
       list.appendChild(li)
     })
     Array.prototype.forEach.call(list.querySelectorAll('input'), function (input) {
@@ -432,6 +461,7 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
         var t = findChecklistItem(e.target.id)
         if (t) t.completed = e.target.checked
         renderErrands()
+        updateProgressBadge()
         persistState()
       })
     })
@@ -462,7 +492,7 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
       var li = document.createElement('li')
       li.className = 'flex items-center gap-2'
       li.innerHTML = '<input type="checkbox" id="' + ing.id + '" class="h-4 w-4 rounded border-slate-700 bg-slate-800"' + (ing.completed ? ' checked' : '') + ' />' +
-        '<label for="' + ing.id + '" class="' + (ing.completed ? 'text-slate-500 line-through' : '') + '">' + ing.text + '</label>'
+        '<label for="' + ing.id + '" class="' + completionLabelClass(ing.completed) + '">' + ing.text + '</label>'
       list.appendChild(li)
     })
     Array.prototype.forEach.call(list.querySelectorAll('input'), function (input) {
@@ -470,6 +500,7 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
         var item = findChecklistItem(e.target.id)
         if (item) item.completed = e.target.checked
         renderRecipe()
+        updateProgressBadge()
         persistState()
       })
     })
@@ -509,6 +540,7 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
     applyState(event.data.state)
     renderErrands()
     renderRecipe()
+    updateProgressBadge()
   })
 
   // Covers the standalone /share/:slug case (a real origin, no parent) —
@@ -519,6 +551,7 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
 
   renderErrands()
   renderRecipe()
+  updateProgressBadge()
   renderEntertainment(entertainmentTask ? entertainmentTask.title : "Tonight's Game")
 </script>`
 }

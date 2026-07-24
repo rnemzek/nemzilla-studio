@@ -877,6 +877,36 @@
   explicit requirement was scoped to the collapsed state, which is fully clean.
 - **UOW-21 complete.**
 
+### UOW-22 Sync — Proactive AI PO System Prompt & Interactive Task Strikethrough — 2026-07-24
+- **File-attribution correction:** the kickoff named `appGeneratorPrompt.ts` for Part 1's PO
+  conversation guidance, but that file only holds the Dev agent's build prompt + snippet synthesizer —
+  it has no PO conversational text. The real home is `poInterviewLLM.ts`'s `SYSTEM_PROMPT` (with
+  per-domain flavor from `templateRegistry.ts`'s overlays); Part 1 landed there instead.
+- **Part 1:** added an explicit dual-path greeting rule — first turn of a new interview only, names
+  both Order Entry (B2B/E-Commerce) and Unified Itinerary (Day/Meal Planner) before asking what the
+  visitor wants, never repeated after. Added a "Proactive nudges" rule (max one per turn, gated on
+  vendorName/day-name already known, always droppable): itinerary path offers live TV/sports/movies or
+  recipe-ingredient-to-checklist parsing; order-entry path recognizes a retail category from the
+  vendor name for seeded item suggestions, and separately proposes a threshold discount rule once a
+  couple of priced catalog items exist. Kept in the domain-neutral base prompt (not per-template
+  overlays) so nudges fire from natural language alone — consistent with UOW-20's decoupling of domain
+  framing from explicit `/template`, avoiding any regression of that fix.
+- **Part 2:** `buildUnifiedItinerarySnippet()` — checked items now get `transition-all line-through
+  opacity-50` (was a bare `text-slate-500 line-through`) via a shared `completionLabelClass()` helper
+  used by both the errand list and recipe checklist. New `#progress-badge` next to the title, updated
+  live by `updateProgressBadge()`, counting every checkable item across both lists as one combined
+  "3/9 Completed" readout. Dual persistence needed no changes — the existing parent-relay/own-origin
+  `localStorage` split from Plan C already covered the new UI state the same way it covered checkbox
+  state before.
+- **Verification:** `tsc -b`/`test:sse` (as requested) both clean. Additionally ran a full
+  production-mode Playwright pass across both required contexts: sandboxed iframe (via the Cookbook
+  preset launcher, with a buffer after "ready" to dodge the documented single-active-builder race) —
+  strikethrough + badge update confirmed on check; and standalone `/share/:slug` (a real published
+  page via `/api/publish`) — strikethrough + badge update confirmed, AND a real page reload correctly
+  restored both the checked state and the badge count via the own-origin `localStorage` path. Zero new
+  console errors.
+- **UOW-22 complete.**
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

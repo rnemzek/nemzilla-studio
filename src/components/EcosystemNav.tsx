@@ -7,6 +7,7 @@ import VisitorTag from './VisitorTag.tsx'
 import FeedbackModal from './FeedbackModal.tsx'
 import { currentRoleBadge } from '../lib/sessionRoleStore.ts'
 import { toggleGuide } from '../lib/guidedBannerStore.ts'
+import { openExecutiveShowcase } from '../lib/executiveShowcaseStore.ts'
 
 const ROLE_BADGE_LABEL: Record<'builder' | 'spectator', string> = {
   builder: '🟢 ACTIVE BUILDER',
@@ -29,6 +30,13 @@ function EcosystemNav() {
         <CommandCenterDrawer />
       </div>
       <nav aria-label="Studio controls" class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="whitespace-nowrap rounded-md border border-border bg-surface-raised px-2 py-1.5 text-xs text-text-muted transition-colors hover:border-accent hover:text-text sm:px-3"
+          onClick={openExecutiveShowcase}
+        >
+          <span aria-hidden="true">⚡</span> <span class="hidden sm:inline">Executive Summary</span>
+        </button>
         <button
           type="button"
           class="whitespace-nowrap rounded-md border border-border bg-surface-raised px-2 py-1.5 text-xs text-text-muted transition-colors hover:border-accent hover:text-text sm:px-3"

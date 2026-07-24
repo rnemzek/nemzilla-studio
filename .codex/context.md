@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-22 - Proactive AI PO System Prompt & Interactive Task Strikethrough
-- **Active Task**: UOW-22 complete — ready for next UOW
+- **Current UOW**: UOW-23 - Executive Product Showcase Overlay / Drawer for Recruiters & Product Owners
+- **Active Task**: UOW-23 complete — ready for next UOW
 
 ---
 
@@ -1010,4 +1010,41 @@ in the SDK doc rather than silently claimed as built._
       (`poInterviewLLM.ts`) rather than the file named in the kickoff prompt, and the itinerary's
       strikethrough/progress-badge behavior was verified live in both the sandboxed and standalone
       persistence contexts, not just compiled.
+
+## [x] UOW 23 - Executive Product Showcase Overlay / Drawer for Recruiters & Product Owners
+
+- [x] Task 23.1 (`ExecutiveShowcaseModal.tsx`): new modal presenting the product pitch to
+      non-technical hiring managers/POs — hero headline ("NemZilla Studio: Conversational AI-Native
+      Micro-App Platform") plus the three specified value-prop bullets (Instant Micro-Apps, Edge
+      Publishing Engine, Multi-Agent Orchestration), verbatim copy as given. Mounted globally in
+      `App.tsx` alongside `AdminDrawer`, following the same modal shape (`fixed inset-0 z-30` backdrop,
+      matching `BibleModal.tsx`/`FeedbackModal.tsx`/`PublishModal.tsx`'s existing convention).
+- [x] Task 23.2 (Action Buttons): "🚀 Launch Live Workspace" dismisses the modal and marks the pitch
+      seen. "📄 View Resume / Architecture Spec" opens `https://robert.nemzilla.net` in a new tab —
+      the same destination `/launch robert` already resolves to (`terminalCommands.ts`'s
+      `LAUNCH_TARGETS`), reused rather than fabricating a new URL; deliberately does NOT dismiss the
+      modal (a recruiter reading the resume in a new tab shouldn't lose their place in the pitch).
+- [x] Task 23.3 (Default Visibility Logic): new `src/lib/executiveShowcaseStore.ts` (same
+      toggle-in-nav/content-elsewhere shared-signal shape as `guidedBannerStore.ts`) reads
+      `localStorage.getItem('agentz_executive_seen')` at module init — if not `'true'`, the modal
+      starts open on first render, showing the pitch before anything else. "Launch Live Workspace" and
+      the modal's own "✕"/backdrop-click both dismiss AND persist the seen flag (either way the
+      visitor has seen the pitch); only these two paths write the flag.
+- [x] Task 23.4 (Header Quick-Action): `EcosystemNav.tsx` gained a "⚡ Executive Summary" button
+      (matching the existing "ℹ️ How it Works" button's styling) calling `openExecutiveShowcase()` —
+      reopens the pitch on demand at any time WITHOUT touching the persisted seen flag, so manually
+      reopening it doesn't change whether it auto-shows again on some future fresh visit.
+- **Verification:** `npx tsc -b` and `npm run build` (as requested) both clean. Additionally ran a
+      full production-mode Playwright pass (this project's standing convention for behavioral
+      changes): a fresh visitor with no `localStorage` flag sees the modal auto-open on load, with the
+      exact specified headline and all three value-prop bullets present; the resume link resolves to
+      the correct external URL/target and does NOT close the modal when present; clicking "Launch Live
+      Workspace" dismisses the modal and sets `agentz_executive_seen` to `'true'`; **a real page
+      reload with the flag now set correctly does NOT re-show the modal**; the header's "Executive
+      Summary" button reopens it on demand without altering the persisted flag; and the "✕" button
+      also dismisses cleanly. Zero new console errors (the one message seen was the same
+      pre-existing, already-documented `auditStore.ts` reload artifact from UOW-15/21/22).
+- **UOW-23 complete.** The executive pitch shows automatically to first-time visitors, is reachable
+      any time from the header, and both action buttons behave exactly as specified — verified live,
+      not just compiled.
 

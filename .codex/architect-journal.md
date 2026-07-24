@@ -907,6 +907,28 @@
   console errors.
 - **UOW-22 complete.**
 
+### UOW-23 Sync — Executive Product Showcase Overlay / Drawer for Recruiters & Product Owners — 2026-07-24
+- New `ExecutiveShowcaseModal.tsx`: the product pitch a non-technical hiring manager/PO sees first —
+  hero headline + the three specified value-prop bullets (Instant Micro-Apps, Edge Publishing Engine,
+  Multi-Agent Orchestration), verbatim copy. Mounted globally in `App.tsx`, same `z-30` backdrop
+  modal shape as `BibleModal.tsx`/`FeedbackModal.tsx`/`PublishModal.tsx`.
+- New `executiveShowcaseStore.ts` (same toggle-in-nav/content-elsewhere shape as
+  `guidedBannerStore.ts`): reads `agentz_executive_seen` from `localStorage` at init — defaults open
+  if not `'true'`, so first-time visitors see the pitch before anything else. "Launch Live Workspace"
+  and the modal's own "✕"/backdrop-click both dismiss AND persist the seen flag; the header's new
+  "⚡ Executive Summary" button (`EcosystemNav.tsx`) reopens on demand WITHOUT touching that flag, so
+  a manual reopen doesn't change whether a future fresh visit auto-shows it again.
+- "📄 View Resume / Architecture Spec" opens `https://robert.nemzilla.net` — the same destination
+  `/launch robert` already resolves to (`terminalCommands.ts`) — in a new tab, deliberately without
+  dismissing the modal, rather than fabricating a new URL for this button.
+- **Verification:** `tsc -b`/`build` (as requested) both clean. Full production-mode Playwright pass
+  confirmed: fresh visitor (no flag) sees the modal auto-open with the exact headline and all three
+  bullets; the resume link's href/target are correct and inspecting it doesn't close the modal;
+  "Launch Live Workspace" dismisses and sets the flag to `'true'`; a real page reload with the flag
+  set correctly does NOT re-show the modal; the header button reopens it without altering the
+  persisted flag; and the "✕" dismisses cleanly. Zero new console errors.
+- **UOW-23 complete.**
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

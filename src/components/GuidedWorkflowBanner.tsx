@@ -24,6 +24,22 @@ function persistCollapsed(collapsed: boolean): void {
   }
 }
 
+/**
+ * UAT fix: the onboarding CTA — scrolls to and focuses AgentZ's own prompt
+ * box. Reached via a plain DOM query (`Terminal.tsx`'s existing
+ * `data-testid="terminal"`) rather than a new cross-component store: this is
+ * a one-shot imperative action with no ongoing state to keep in sync, so a
+ * dedicated store would be pure overhead. `preventScroll` on `.focus()`
+ * stops the browser's own default focus-triggered jump from fighting with
+ * the smooth scroll this triggers right after it.
+ */
+function focusPrompt(): void {
+  const input = document.querySelector<HTMLTextAreaElement>('[data-testid="terminal"] textarea')
+  if (!input) return
+  input.focus({ preventScroll: true })
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
 /** Pass D Task 2: a "what is this and where do I start" banner — collapsible, persisted per-browser so a returning visitor who already dismissed it isn't shown it again. */
 export default function GuidedWorkflowBanner() {
   const [collapsed, setCollapsed] = createSignal(loadCollapsed())
@@ -59,6 +75,13 @@ export default function GuidedWorkflowBanner() {
               )}
             </For>
           </ol>
+          <button
+            type="button"
+            class="mt-3 w-full animate-pulse rounded-md bg-accent px-4 py-2 text-sm font-semibold text-slate-950 transition-colors hover:bg-accent/90"
+            onClick={focusPrompt}
+          >
+            🚀 Click here to blast off!
+          </button>
         </div>
       </Show>
     </section>

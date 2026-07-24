@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-19 - Plan C UOW-3/4: Edge Publishing Engine & QR Code Modal
-- **Active Task**: UOW-19 complete — ready for next UOW
+- **Current UOW**: UOW-20 - UAT Fixes: Sticky Nav, Onboarding CTA & AI PO Domain-Locking Bug
+- **Active Task**: UOW-20 complete — ready for next UOW
 
 ---
 
@@ -858,4 +858,52 @@ in the SDK doc rather than silently claimed as built._
 - **UOW-19 complete.** Both Plan C tasks (persistent payload storage, publish button + QR modal)
       shipped and verified end-to-end, including the standalone-page persistence path UOW-18 didn't
       need to solve for (no published-page context existed yet at that point).
+
+## [x] UOW 20 - UAT Fixes: Sticky Nav, Onboarding CTA & AI PO Domain-Locking Bug
+
+- [x] Task 20.1 (Sticky Navigation): `EcosystemNav.tsx`'s `<header>` gained `sticky top-0 z-20`.
+      `z-20`, not the initially-drafted `z-50` — checked against every existing modal/drawer's own
+      z-index first (`AdminDrawer.tsx`/`CommandCenterDrawer.tsx`/`FeedbackModal.tsx`/etc. all use
+      `z-30`/`z-40`) and caught that `z-50` would have made the sticky header render *on top of*
+      any open modal or drawer. `z-20` stays above ordinary scrolling page content while remaining
+      correctly beneath every modal/drawer layer.
+- [x] Task 20.2 (Onboarding CTA): `GuidedWorkflowBanner.tsx` gained a "🚀 Click here to blast off!"
+      button at the bottom of the expanded 3-step guide. Reaches `Terminal.tsx`'s prompt textarea via
+      a plain `document.querySelector('[data-testid="terminal"] textarea')` rather than a new
+      cross-component store — a one-shot imperative action (focus + scroll) with no ongoing state to
+      keep synchronized doesn't need one. `.focus({ preventScroll: true })` fires before
+      `.scrollIntoView({ behavior: 'smooth' })` so the browser's own default focus-jump doesn't fight
+      the smooth-scroll animation.
+- [x] Task 20.3 (AI PO Domain-Locking Bug — critical, root-caused): reproduced and fixed the
+      reported bug ("Lets make my to-do list for the day?" → "let me help you build your
+      order-entry app first!"). Root cause was two compounding issues, both introduced in Pass E
+      (UOW-17): (a) `poInterviewLLM.ts`'s base `SYSTEM_PROMPT` unconditionally opened with "...to
+      build a small order-entry web app," framing *every* interview as order-entry from the first
+      token regardless of what the visitor actually asked for; (b) `poInterview.ts` (client)
+      unconditionally sent the *active* domain template's id on every turn, meaning the
+      default-active `'order-entry'` template's `systemPromptOverlay` ("keep the discovery centered
+      on a vendor/company name...") was silently applied to every single interview whether the
+      visitor had ever run `/template` or not. Fixed both: rewrote `SYSTEM_PROMPT` to be
+      domain-neutral, explicitly instructing the model to read the visitor's own words and adopt
+      whatever vocabulary fits (to-do list, dinner plan, itinerary, order entry, etc.) rather than
+      defaulting to order-entry framing — the underlying `vendorName`/`catalog`/`hitlThreshold`
+      extraction contract is unchanged, only the *instructions* around it; and added
+      `templateExplicitlySet` to `templateStore.ts` (a signal set `true` only inside
+      `setActiveTemplate()`, i.e. only when `/template <id>` is actually run), gating whether
+      `poInterview.ts` sends a `templateId` at all — a visitor who never touches `/template` now
+      gets no overlay whatsoever, letting the rewritten base prompt's own natural-language judgment
+      drive the conversation. The Swarm Canvas idle preview and App Preview's domain badge still
+      default to showing `'order-entry'` for *display* purposes — only the AI PO's actual
+      conversation behavior was gated.
+- **Verification:** `npx tsc -b` (as requested), `npm run build`, and `npm run test:sse` all clean.
+      Full production-mode Playwright pass confirmed: the header's computed CSS `position: sticky`
+      stays pinned to the viewport top after scrolling 800px; the Blast Off button both focuses and
+      smooth-scrolls the real prompt textarea into view; and — the critical check — sending "Lets
+      make my to-do list for the day?" with **no** `/template` command run first produced the AI PO
+      reply "Great! I'd love to help you build a to-do list app. What's the name of your day or the
+      main thing you're planning for..." with zero order-entry/vendor/catalog language, reproducing
+      the exact reported scenario and confirming the fix against a real Anthropic API call, not just
+      a compile check. Zero console errors.
+- **UOW-20 complete.** All 3 UAT issues fixed, with the domain-locking bug traced to its actual root
+      cause in Pass E's own overlay-injection design rather than patched at the symptom level.
 

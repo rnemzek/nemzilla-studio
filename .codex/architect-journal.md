@@ -834,6 +834,28 @@
   message was a Playwright-only clipboard-permission limitation, not a real bug.
 - **UOW-19 complete.**
 
+### UOW-20 Sync — UAT Fixes: Sticky Nav, Onboarding CTA & AI PO Domain-Locking Bug — 2026-07-24
+- **Sticky nav:** `EcosystemNav.tsx`'s header is now `sticky top-0`. Checked existing z-index usage
+  first (every modal/drawer uses `z-30`/`z-40`) and used `z-20`, not the naive `z-50`, so the header
+  stays above ordinary content without incorrectly floating over open modals/drawers.
+- **Onboarding CTA:** a "🚀 Click here to blast off!" button in `GuidedWorkflowBanner.tsx`, focusing
+  and smooth-scrolling the real prompt textarea via a plain DOM query — no new store needed for a
+  one-shot action with nothing to keep in sync.
+- **The real bug, root-caused:** "Lets make my to-do list for the day?" was getting steered toward
+  "let me help you build your order-entry app first!" — traced to two compounding issues both
+  introduced in Pass E (UOW-17): the base AI PO system prompt unconditionally framed every interview
+  as order-entry from the first token, and the client unconditionally sent the *default-active*
+  template's overlay on every turn regardless of whether the visitor had ever run `/template`.
+  Rewrote the base prompt to be domain-neutral (same extraction schema, different instructions), and
+  gated the overlay behind a new `templateExplicitlySet` signal — only sent when `/template` was
+  actually invoked. Display defaults (Swarm Canvas idle preview, App Preview's domain badge) are
+  unchanged; only the AI PO's actual conversation behavior was gated.
+- **Verification:** `tsc -b` (as requested)/`build`/`test:sse` all clean. Full production-mode
+  Playwright pass confirmed the sticky header, the CTA's focus+scroll behavior, and — the critical
+  check — a real Anthropic API call reproducing the exact reported scenario with **no** `/template`
+  run first, getting back a correctly to-do-list-flavored reply with zero order-entry language.
+- **UOW-20 complete.**
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

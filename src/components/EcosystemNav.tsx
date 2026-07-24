@@ -19,7 +19,7 @@ const ROLE_BADGE_CLASS: Record<'builder' | 'spectator', string> = {
 
 function EcosystemNav() {
   return (
-    <header class="flex w-full flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3 sm:px-6">
+    <header class="sticky top-0 z-20 flex w-full flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3 sm:px-6">
       <div class="flex items-center gap-2">
         <RnAvatar size={22} class="shrink-0" />
         <span class="font-mono text-sm tracking-wide text-text">

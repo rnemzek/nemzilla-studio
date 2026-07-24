@@ -9,7 +9,7 @@
  */
 
 import { getVisitor } from './visitorStore.ts'
-import { activeTemplateId } from './templateStore.ts'
+import { activeTemplateId, templateExplicitlySet } from './templateStore.ts'
 
 export interface PoTranscriptEntry {
   role: 'po' | 'user'
@@ -72,9 +72,15 @@ async function callInterviewApi(
     // Pass C: correlates this interview to a visitor (visitorStore.ts) and
     // lets the server audit-log the turn under this interview's own
     // sessionId — powers the Admin Drawer's Session Detail view.
-    // Pass E: also sends the active domain template id (templateStore.ts) so
-    // the server can layer that domain's systemPromptOverlay onto the base
-    // discovery prompt for this turn (poInterviewLLM.ts).
+    // Pass E: sends the active domain template id (templateStore.ts) so the
+    // server can layer that domain's systemPromptOverlay onto the base
+    // discovery prompt for this turn (poInterviewLLM.ts) — but only once
+    // the visitor has explicitly run /template. Sending it unconditionally
+    // (the original Pass E behavior) meant every interview silently got the
+    // default 'order-entry' template's overlay whether the visitor asked
+    // for an order-entry app or not, overriding the AI PO's own
+    // natural-language domain judgment for anyone who never touched
+    // /template — a real bug, not the intended behavior.
     const visitor = getVisitor()
     const res = await fetch(`${window.location.origin}/api/po/interview`, {
       method: 'POST',
@@ -86,7 +92,7 @@ async function callInterviewApi(
         sessionId,
         visitorId: visitor.visitorId,
         handle: visitor.handle,
-        templateId: activeTemplateId(),
+        templateId: templateExplicitlySet() ? activeTemplateId() : undefined,
       }),
     })
     if (!res.ok) {

@@ -1,5 +1,6 @@
-import { For, createEffect, onCleanup, onMount } from 'solid-js'
+import { For, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import { auditStore, type ChainStatus, type PolicyStatus } from '../lib/auditStore.ts'
+import { copyDebugArtifacts } from '../lib/artifactExport.ts'
 import PanelHelpButton from './PanelHelpButton.tsx'
 
 const CHAIN_STATUS_LABEL: Record<ChainStatus, string> = {
@@ -31,11 +32,20 @@ function formatTime(iso: string): string {
 export default function AuditLedgerPanel() {
   const audit = auditStore
   let scrollRef: HTMLDivElement | undefined
+  const [copied, setCopied] = createSignal(false)
 
   onMount(() => {
     const disconnect = audit.connect()
     onCleanup(disconnect)
   })
+
+  async function handleCopyArtifacts() {
+    const ok = await copyDebugArtifacts()
+    if (ok) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }
+  }
 
   createEffect(() => {
     audit.state.blocks.length
@@ -53,6 +63,14 @@ export default function AuditLedgerPanel() {
           <span class={`font-mono text-xs ${CHAIN_STATUS_CLASS[audit.state.chainStatus]}`}>
             {CHAIN_STATUS_LABEL[audit.state.chainStatus]}
           </span>
+          <button
+            type="button"
+            title="Copy PO hand-off state, recent audit entries, and swarm session metadata as Markdown"
+            class="whitespace-nowrap rounded-md border border-border bg-surface-raised px-2 py-0.5 text-[11px] text-text-muted transition-colors hover:border-accent hover:text-text"
+            onClick={() => void handleCopyArtifacts()}
+          >
+            {copied() ? '✅ Copied!' : '📋 Copy Debug Artifacts'}
+          </button>
           <PanelHelpButton title="Audit Ledger">
             <p>
               The governance trail — every agent step, policy check, and generated payload is logged

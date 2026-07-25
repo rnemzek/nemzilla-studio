@@ -7,7 +7,7 @@ import { isValidSessionId, readSessionBundle } from './sessionBundleRecorder.ts'
 import { isValidVisitorId, sanitizeHandle, touchVisitor, linkPipelineSession, addMilestone } from './visitorTracker.ts'
 import { sendHighValueAlert } from './webhookNotifier.ts'
 import { dispatchDomainAgents, type DomainAgentResult } from './domainAgents.ts'
-import { synthesizeOrderEntryApp, type SwarmCatalogItem } from './swarmCodeSynthesizer.ts'
+import { synthesizeOrderEntryApp, synthesizeItineraryApp, type SwarmCatalogItem } from './swarmCodeSynthesizer.ts'
 import {
   claimSession,
   endSession,
@@ -369,33 +369,48 @@ async function runSwarmPipeline(sessionId: string, swarmSessionId: string): Prom
   await swarmHandoff(emit, 'Policy', 'Lead Dev')
   await sleep(SWARM_STAGE_GAP_MS)
 
-  // Stage N+2: Lead Dev — synthesizes the real, executable order-entry app
-  // (Task 11.6) from the interview's catalog + the resolved policy ceiling
-  // + the dispatched agents' labels, streaming it exactly like the classic
+  // Stage N+2: Lead Dev — synthesizes the real, executable app (Task 11.6)
+  // from the interview's catalog + the resolved policy ceiling + the
+  // dispatched agents' labels, streaming it exactly like the classic
   // pipeline's generated_app_payload chunks so `sandboxStore.ts` needs zero
   // changes to render it.
-  const code = synthesizeOrderEntryApp(
-    swarmSessionId,
-    ctx.vendorName,
-    catalog.items as SwarmCatalogItem[],
-    autoApproveCeiling,
-    SYSTEM_CEILING.maxOrderThreshold,
-    dispatched,
-  )
+  //
+  // UAT fix: this used to always call synthesizeOrderEntryApp(), regardless
+  // of what domain the interview actually captured — an itinerary/day-plan
+  // interview (tasks like "walk the dog") got rendered as a shopping cart
+  // with a "Submit Order" button. `dispatchDomainAgents()` above already ran
+  // a real semantic classification of this catalog/vendor content — "AI
+  // TODO" only dispatches for vendors whose app genuinely involves tracking
+  // tasks/errands (see domainAgents.ts's registry description) — so reusing
+  // that same signal to pick the synthesizer is consistent with the rest of
+  // this pipeline's "no keyword matching, real classification" approach,
+  // rather than adding a second, redundant domain check.
+  const isItineraryDomain = dispatched.some((d) => d.agent === 'AI TODO')
+  const scenario = isItineraryDomain ? 'swarm-itinerary' : 'swarm-order-entry'
+  const code = isItineraryDomain
+    ? synthesizeItineraryApp(ctx.vendorName, catalog.items as SwarmCatalogItem[], autoApproveCeiling, SYSTEM_CEILING.maxOrderThreshold, dispatched)
+    : synthesizeOrderEntryApp(
+        swarmSessionId,
+        ctx.vendorName,
+        catalog.items as SwarmCatalogItem[],
+        autoApproveCeiling,
+        SYSTEM_CEILING.maxOrderThreshold,
+        dispatched,
+      )
 
   const leadDevOk = await runSwarmStage(emit, sessionId, 'Lead Dev', SWARM_THOUGHTS.leadDev(ctx, dispatched), {
     auditPayload: { swarmSessionId, dispatchedAgents: dispatched.map((d) => d.agent) },
     onTokensDone: async () => {
       for (const chunk of chunkString(code, CODE_CHUNK_SIZE)) {
         if (isAborted(sessionId)) return
-        emit({ name: 'generated_app_payload', broadcast: { scenario: 'swarm-order-entry', code: chunk, done: false } })
+        emit({ name: 'generated_app_payload', broadcast: { scenario, code: chunk, done: false } })
         await sleep(CODE_CHUNK_DELAY_MS)
       }
       if (isAborted(sessionId)) return
       emit({
         name: 'generated_app_payload',
-        broadcast: { scenario: 'swarm-order-entry', code, done: true },
-        audit: { payload: { swarmSessionId, scenario: 'swarm-order-entry', size: code.length } },
+        broadcast: { scenario, code, done: true },
+        audit: { payload: { swarmSessionId, scenario, size: code.length } },
       })
     },
   })
@@ -403,7 +418,7 @@ async function runSwarmPipeline(sessionId: string, swarmSessionId: string): Prom
 
   emit({
     name: 'pipeline_completed',
-    data: { scenario: 'swarm-order-entry', code, prompt: `Swarm build: ${ctx.vendorName}`, bundleSessionId: swarmSessionId },
+    data: { scenario, code, prompt: `Swarm build: ${ctx.vendorName}`, bundleSessionId: swarmSessionId },
     notify: { type: 'success', message: `Build complete — ${ctx.vendorName}` },
   })
 

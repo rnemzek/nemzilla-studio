@@ -953,6 +953,42 @@
   correct; no scrollbar on the frame itself. Zero new console errors.
 - **UOW-24 complete.**
 
+### UOW-25 Sync — Fix Swarm Build Hand-off Error, Restore andiamo Alias, Adjust PO Nudging, Artifact Export Button — 2026-07-25
+- **Issue 1, two real root causes found by direct reproduction:** (1) `agentStream.ts`'s
+  `runSwarmPipeline()` called `synthesizeOrderEntryApp()` unconditionally regardless of domain — an
+  itinerary interview got rendered as a shopping cart with "Submit Order." Fixed with a new
+  `synthesizeItineraryApp()` (task checklist, UOW-24's strikethrough/progress-badge visual language),
+  routed via `dispatchDomainAgents()`'s existing "AI TODO" semantic-classification signal rather than a
+  new redundant check. (2) `poInterview.ts`'s `applyTurn()` unconditionally overwrote already-confirmed
+  fields with whatever the latest LLM turn returned, including `null` — if the model ever omitted a
+  confirmed field on the exact turn `done` flipped true, this silently erased it client-side,
+  `persistInterviewArtifacts()` then skipped writing that artifact, and the swarm hand-off correctly
+  (from its own view) reported "denied — no completed discovery interview found" for a genuinely
+  finished interview. Fixed with `data.X ?? state.X` folding — a confirmed field can never regress.
+- **Issue 2:** `poInterviewLLM.ts` gained an explicit "Instant completion trigger" rule for
+  andiamo/build/go//build, recognized mid-interview (not just after "Ready to build" already shows) —
+  if all fields are confirmed, replies with the exact string "Andiamo! Verifying the hand-off
+  package..." and sets done:true; never fakes completion if a field is genuinely still missing. Also
+  fixed `/build` (terminalCommands.ts) silently discarding an already-completed interview and starting
+  fresh instead of launching it.
+- **Issue 3:** removed UOW-22's itinerary-path TV/sports/recipe nudge from the system prompt, replaced
+  with an explicit "stay lean and task-focused, do NOT volunteer recipes/TV/entertainment unless the
+  visitor brings it up" rule. Order-entry-path nudges left intact (out of scope here).
+- **Issue 4:** new `artifactExport.ts` (`buildDebugArtifactsMarkdown()`/`copyDebugArtifacts()`)
+  aggregates PO hand-off state + swarm session metadata + last 20 audit entries into Markdown; new
+  "📋 Copy Debug Artifacts" button in `AuditLedgerPanel.tsx`'s header (same copy/✅-Copied! pattern as
+  `PublishModal.tsx`).
+- **Verification:** `tsc -b`/`build` (as requested) both clean. Full production-mode Playwright pass
+  drove a real itinerary interview end-to-end through the actual UI, said "andiamo," clicked Build, and
+  confirmed zero denied audit entries, the correct itinerary checklist rendering (not a cart), and the
+  copy button producing real clipboard content with all three sections. Two supplementary API-level
+  checks confirmed the system-prompt-level andiamo recognition (not just the pre-existing done-already
+  client shortcut) and the absence of food/TV nudges in a fresh conversation. Mid-verification reminder:
+  this project's production-mode Playwright pattern serves the prebuilt `dist/` bundle, so a missing
+  change in a test run means "rebuild first," confirmed when the new Copy button was genuinely absent
+  from a stale build.
+- **UOW-25 complete.**
+
 - **Next Milestone:** whatever the user scopes next.
 
 ---

@@ -116,9 +116,18 @@ async function callInterviewApi(
 function applyTurn(state: PoInterviewState, data: PoInterviewApiResponse, userMessage: string | null): PoInterviewStep {
   if (userMessage !== null) state.transcript.push({ role: 'user', message: userMessage, timestamp: nowIso() })
   state.transcript.push({ role: 'po', message: data.reply, timestamp: nowIso() })
-  state.vendorName = data.vendorName
-  state.catalog = data.catalog
-  state.hitlThreshold = data.hitlThreshold
+  // UAT fix: the system prompt tells the model to keep re-reporting an
+  // already-confirmed field on every later turn, but that's a natural-
+  // language instruction to an LLM, not a guarantee — if the model ever
+  // omits one on the exact turn `done` flips true, overwriting unconditionally
+  // here silently erased already-confirmed data, which made
+  // persistInterviewArtifacts() (terminalCommands.ts) skip writing that
+  // artifact and the swarm hand-off report "denied — no completed discovery
+  // interview found" even though the visitor really had finished. A field,
+  // once genuinely confirmed, should never regress back to null client-side.
+  state.vendorName = data.vendorName ?? state.vendorName
+  state.catalog = data.catalog ?? state.catalog
+  state.hitlThreshold = data.hitlThreshold ?? state.hitlThreshold
   state.done = data.done
   return { state, reply: data.reply, done: data.done }
 }

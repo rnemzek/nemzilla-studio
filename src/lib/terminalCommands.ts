@@ -385,7 +385,16 @@ async function runSlashCommand(ctx: CommandContext, rawInput: string): Promise<v
       runLaunch(ctx, args[0])
       break
     case 'build':
-      if (activeInterview && !activeInterview.done) {
+      // UAT fix: /build used to unconditionally fall through to
+      // startInterview() whenever the current interview wasn't *in progress*
+      // — which included the "already done" case, silently discarding a
+      // just-completed interview and starting a fresh one instead of
+      // launching it. /build is now one of the recognized instant-completion
+      // aliases alongside "andiamo"/"go" (see poInterviewLLM.ts's system
+      // prompt): once done, it launches the swarm build, matching /andiamo.
+      if (activeInterview?.done) {
+        await runAndiamo(ctx)
+      } else if (activeInterview && !activeInterview.done) {
         ctx.print('A discovery interview is already in progress — answer above, or type "/reset" to start over.', 'error')
       } else {
         await startInterview(ctx)

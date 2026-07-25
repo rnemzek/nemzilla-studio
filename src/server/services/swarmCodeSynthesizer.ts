@@ -187,3 +187,81 @@ export function synthesizeOrderEntryApp(
   renderCart()
 </script>`
 }
+
+/**
+ * UAT fix: the conversational swarm build used to call
+ * `synthesizeOrderEntryApp()` unconditionally, regardless of what domain the
+ * discovery interview actually captured — an itinerary/day-plan interview
+ * (tasks like "walk the dog", "pick up dry cleaning") got rendered as a
+ * shopping cart with a "Submit Order" button, which is simply the wrong
+ * shape of app for what was discussed. This is the itinerary counterpart:
+ * same catalog-item input shape (`{name, price}` — the discovery interview's
+ * one domain-neutral extraction contract, see poInterviewLLM.ts), rendered
+ * as a task checklist instead of a cart. Reuses the checkbox
+ * strikethrough/progress-badge visual language already established for the
+ * Unified Itinerary Synthesizer (appGeneratorPrompt.ts's
+ * buildUnifiedItinerarySnippet) rather than inventing a new completion
+ * pattern.
+ */
+export function synthesizeItineraryApp(
+  planName: string,
+  tasks: SwarmCatalogItem[],
+  approvalThreshold: number,
+  systemCeiling: number,
+  dispatched: DomainAgentResult[],
+): string {
+  const safePlan = escapeHtml(planName)
+  const dispatchedLabel = escapeHtml(dispatched.map((d) => d.agent).join(', '))
+  const tasksJson = toInlineJson(tasks.map((task, i) => ({ id: `task-${i}`, name: task.name, price: task.price, completed: false })))
+
+  return `<div class="min-h-screen bg-slate-950 p-6 text-slate-100">
+  <div class="mx-auto max-w-2xl">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h1 class="text-2xl font-bold">✨ ${safePlan}</h1>
+      <span id="progress-badge" class="whitespace-nowrap rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 transition-all">0/${tasks.length} Completed</span>
+    </div>
+    <p class="mt-1 text-sm text-slate-400">Built by ${dispatchedLabel} — a task checklist with a spending threshold check.</p>
+    <p class="mt-1 text-xs text-slate-500">Governance: any single task over $${approvalThreshold} is flagged for review &middot; $${systemCeiling} system ceiling.</p>
+
+    <div class="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Tasks</h2>
+      <ul id="task-list" class="mt-2 space-y-2 text-sm"></ul>
+    </div>
+  </div>
+</div>
+<script>
+  var TASKS = ${tasksJson}
+  var APPROVAL_THRESHOLD = ${approvalThreshold}
+
+  function updateProgressBadge() {
+    var completed = TASKS.filter(function (t) { return t.completed }).length
+    document.getElementById('progress-badge').textContent = completed + '/' + TASKS.length + ' Completed'
+  }
+
+  function renderTasks() {
+    var list = document.getElementById('task-list')
+    list.innerHTML = TASKS.map(function (t) {
+      var flagged = t.price > APPROVAL_THRESHOLD
+        ? ' <span class="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">⚠ needs approval</span>'
+        : ''
+      var cost = t.price > 0 ? ' <span class="text-slate-500">($' + t.price.toFixed(2) + ')</span>' : ''
+      var labelClass = t.completed ? 'transition-all line-through opacity-50' : 'transition-all'
+      return '<li class="flex items-center gap-2">' +
+        '<input type="checkbox" id="' + t.id + '" class="h-4 w-4 rounded border-slate-700 bg-slate-800"' + (t.completed ? ' checked' : '') + ' />' +
+        '<label for="' + t.id + '" class="' + labelClass + '">' + t.name + cost + flagged + '</label>' +
+        '</li>'
+    }).join('')
+    Array.prototype.forEach.call(list.querySelectorAll('input'), function (input) {
+      input.addEventListener('change', function (e) {
+        var task = TASKS.filter(function (t) { return t.id === e.target.id })[0]
+        if (task) task.completed = e.target.checked
+        renderTasks()
+        updateProgressBadge()
+      })
+    })
+  }
+
+  renderTasks()
+  updateProgressBadge()
+</script>`
+}

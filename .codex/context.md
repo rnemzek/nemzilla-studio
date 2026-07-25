@@ -5,8 +5,8 @@
 - Always perform an INPLACE-EDIT to change `[ ]` to `[x]`.
 
 ## Active UOW Status
-- **Current UOW**: UOW-24 - UAT Feedback Pass: Always-On Exec Summary, Panel Help Pop-overs, App Preview Device Frame
-- **Active Task**: UOW-24 complete — ready for next UOW
+- **Current UOW**: UOW-25 - Fix Swarm Build Hand-off Error, Restore andiamo Alias, Adjust PO Nudging, Artifact Export Button
+- **Active Task**: UOW-25 complete — ready for next UOW
 
 ---
 
@@ -1091,4 +1091,78 @@ in the SDK doc rather than silently claimed as built._
       mispositioning and the stacking-context z-index trap) caught and fixed during verification
       rather than shipped silently, both invisible from source alone and only found by actually
       loading the page.
+
+## [x] UOW 25 - Fix Swarm Build Hand-off Error, Restore andiamo Alias, Adjust PO Nudging, Artifact Export Button
+
+- **Root cause investigation (Issue 1):** reproduced the reported bug directly rather than guessing —
+      drove a real itinerary discovery interview through the actual UI, then a deterministic
+      bundle-seeded swarm hand-off. Found TWO distinct real bugs, not one:
+      1. `agentStream.ts`'s `runSwarmPipeline()` called `synthesizeOrderEntryApp()`
+         **unconditionally**, regardless of what domain the interview actually captured — an
+         itinerary/day-plan interview (tasks like "walk the dog") got rendered as a shopping cart
+         with a "Submit Order" button, which is simply the wrong app shape. Confirmed live: a
+         "Saturday Plan" itinerary session produced `"Saturday Plan — Order Entry & Approval"`.
+      2. `poInterview.ts`'s `applyTurn()` **unconditionally overwrote** `state.vendorName`/`catalog`/
+         `hitlThreshold` with whatever the latest LLM turn returned — including `null` — even for a
+         field already confirmed earlier. The system prompt's "keep re-reporting a confirmed field"
+         rule is natural-language guidance to the model, not a code guarantee; if the model ever
+         omitted one on the exact turn `done` flipped true, this silently erased already-confirmed
+         data client-side, `persistInterviewArtifacts()` (terminalCommands.ts) then skipped writing
+         that artifact, and the swarm hand-off correctly (from its own perspective) reported "denied
+         — no completed discovery interview found" for an interview the visitor had genuinely
+         finished.
+- [x] Task 25.1 (Domain-correct synthesis): new `synthesizeItineraryApp()`
+      (`swarmCodeSynthesizer.ts`) — same `{name, price}` catalog-item input shape as the order-entry
+      synthesizer, rendered as a task checklist (checkbox → `transition-all line-through opacity-50`,
+      matching UOW-24's established completion visual language; a live "X/Y Completed" badge; any
+      single task priced over the approval threshold flagged "⚠ needs approval") instead of a cart.
+      `runSwarmPipeline()` now picks the synthesizer based on whether `dispatchDomainAgents()`'s real
+      semantic classification (already running in this same pipeline) dispatched "AI TODO" — reusing
+      an existing, proven signal rather than adding a second, redundant domain check.
+- [x] Task 25.2 (Field-regression fix): `applyTurn()` now folds each turn's fields with
+      `data.X ?? state.X` instead of unconditional assignment — a field, once genuinely confirmed,
+      can never regress back to `null` client-side due to one LLM response omitting it.
+- [x] Task 25.3 (andiamo/build/go/`/build` recognition): `poInterviewLLM.ts`'s `SYSTEM_PROMPT` gained
+      an explicit "Instant completion trigger" rule — recognizing these exact words mid-interview, not
+      just after the visitor already sees "Ready to build." If all three fields are already
+      confirmed, the PO replies with the exact required string `"Andiamo! Verifying the hand-off
+      package..."` and sets `done: true`; if a field is genuinely still missing, it does NOT fake
+      completion just because the trigger word was said. Also fixed a related client bug: `/build`
+      (`terminalCommands.ts`) used to silently discard an already-completed interview and start a
+      fresh one instead of launching it — it now launches via the same path as `/andiamo` once done.
+- [x] Task 25.4 (Streamlined PO focus): removed the itinerary-path proactive nudge (UOW-22's
+      TV/sports/recipe-ingredient suggestions) from `poInterviewLLM.ts`'s `SYSTEM_PROMPT` entirely,
+      replaced with an explicit "stay lean and task-focused... do NOT volunteer recipes, cooking/
+      ingredient checklists, TV, sports, or other entertainment suggestions unless the visitor brings
+      one up first" rule. The order-entry-path nudges (retail-category seed items, threshold discount)
+      were left intact — out of scope for this fix, which targeted food/TV nudging specifically.
+- [x] Task 25.5 (Copy Debug Artifacts button): new `src/lib/artifactExport.ts` —
+      `buildDebugArtifactsMarkdown()` aggregates the current PO hand-off state (`interviewStore.ts`),
+      the active swarm session's metadata (`sandboxStore.ts`), and the last 20 Audit Ledger entries
+      (`auditStore.ts`) into one Markdown document with fenced code blocks; `copyDebugArtifacts()`
+      writes it to the clipboard. New "📋 Copy Debug Artifacts" button added to
+      `AuditLedgerPanel.tsx`'s header (same copy-then-"✅ Copied!"-for-1.5s feedback pattern already
+      established in `PublishModal.tsx`).
+- **Verification:** `npx tsc -b` and `npm run build` (as requested) both clean. A full production-mode
+      Playwright pass drove a genuine itinerary discovery interview through the real UI end to end,
+      said "andiamo", clicked Build, and confirmed: the SSE stream completed with **zero denied audit
+      entries**; the App Preview device frame rendered the actual itinerary task checklist
+      (`✨ Saturday Plan`, 3 tasks, `0/3 Completed` badge) instead of an order-entry cart; and the
+      "📋 Copy Debug Artifacts" button produced real clipboard content containing the PO hand-off
+      state, swarm session metadata, and audit ledger entries (confirmed via `navigator.clipboard.
+      readText()`, with the "✅ Copied!" label transition confirmed via an in-page MutationObserver
+      after Playwright's own click-actionability timing produced a false negative — a test-script
+      quirk, not a product bug). Two additional targeted API-level checks confirmed: (a) saying
+      "andiamo" in the same message as the last missing field produces the exact required
+      acknowledgment string and `done: true`, proving the system-prompt-level recognition works (not
+      just the pre-existing done-already-true client shortcut); (b) a full itinerary interview produced
+      zero food/TV/entertainment nudges, where the same conversation before this fix had volunteered
+      "would you like me to add the game tonight to your evening schedule."
+      A rebuild reminder surfaced mid-verification: this project's `NODE_ENV=production` Playwright
+      pattern serves the prebuilt `dist/` bundle, so a source edit invisible in a test run always means
+      "did you rebuild?" before "is this a real bug?" — confirmed here when the new Copy button was
+      genuinely missing from a stale bundle.
+- **UOW-25 complete.** All four issues fixed and verified against a real running server and browser,
+      with the actual root causes of Issue 1 (wrong-domain synthesis AND a silent client-side field
+      regression) both identified through direct reproduction rather than assumption.
 

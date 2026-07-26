@@ -35,6 +35,10 @@ export interface AuditStore {
 }
 
 const MAX_BLOCKS = 300
+const INITIAL_BACKOFF_MS = 200
+const BACKOFF_MULTIPLIER = 1.75
+const MAX_BACKOFF_MS = 30_000
+const JITTER_MS = 50
 
 async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
@@ -82,6 +86,8 @@ export function createAuditStore(): AuditStore {
     const controller = new AbortController()
     let lastHash: string | null = null
     let broken = false
+    let backoffMs = INITIAL_BACKOFF_MS
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined
 
     setState({ blocks: [], chainStatus: 'pending', connected: true })
 
@@ -111,12 +117,26 @@ export function createAuditStore(): AuditStore {
       )
     }
 
-    ;(async () => {
+    /**
+     * Reconnects with exponential backoff (+ jitter, so a burst of clients
+     * failing at once don't all retry in lockstep) instead of the previous
+     * fire-once behavior, where a single dropped connection permanently
+     * stopped the ledger from ever going live again for the rest of the tab
+     * session. Backoff resets to the initial delay as soon as a stream
+     * actually opens, so a real network blip recovers fast while a
+     * persistently down backend backs off up to `MAX_BACKOFF_MS` instead of
+     * hammering it.
+     */
+    async function openStream() {
+      if (controller.signal.aborted) return
       try {
         const res = await fetch(`${window.location.origin}/api/audit/stream`, {
           signal: controller.signal,
         })
         if (!res.body) throw new Error('audit stream: empty response body')
+
+        setState('connected', true)
+        backoffMs = INITIAL_BACKOFF_MS
 
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
@@ -139,11 +159,21 @@ export function createAuditStore(): AuditStore {
         if (controller.signal.aborted) return
         console.error('audit stream error', err)
       } finally {
-        if (!controller.signal.aborted) setState('connected', false)
+        if (controller.signal.aborted) return
+        setState('connected', false)
+        const jitter = Math.random() * JITTER_MS * 2 - JITTER_MS
+        const delay = Math.max(0, backoffMs + jitter)
+        backoffMs = Math.min(backoffMs * BACKOFF_MULTIPLIER, MAX_BACKOFF_MS)
+        reconnectTimer = setTimeout(() => void openStream(), delay)
       }
-    })()
+    }
 
-    return () => controller.abort()
+    void openStream()
+
+    return () => {
+      controller.abort()
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+    }
   }
 
   return { state, connect }

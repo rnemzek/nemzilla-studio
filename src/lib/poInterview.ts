@@ -17,6 +17,33 @@ export interface PoTranscriptEntry {
   timestamp: string
 }
 
+/**
+ * Mirrors the server's EnrichmentCard union (poInterviewLLM.ts /
+ * enrichmentTools.ts) — not imported directly, since server services live in
+ * a separate tsconfig project (tsconfig.node.json) than this client code
+ * (tsconfig.app.json). Same pattern as SYSTEM_ORDER_CEILING below.
+ */
+export type EnrichmentCard =
+  | {
+      type: 'recipe'
+      title: string
+      servings: number
+      prepTimeMinutes: number
+      ingredients: Array<{ name: string; quantity: string }>
+      steps: string[]
+    }
+  | {
+      type: 'sports'
+      team: string
+      games: Array<{ opponent: string; date: string; time: string; venue: string; broadcast: string; streamUrl: string }>
+    }
+  | {
+      type: 'grocery'
+      item: string
+      stores: Array<{ name: string; price: number }>
+      cheapest: string
+    }
+
 export interface PoCatalogItem {
   name: string
   price: number
@@ -35,6 +62,7 @@ export interface PoInterviewStep {
   state: PoInterviewState
   reply: string
   done: boolean
+  enrichment?: EnrichmentCard[]
 }
 
 // Mirrors policyEngine.ts's SYSTEM_CEILING.maxOrderThreshold (see
@@ -50,6 +78,7 @@ interface PoInterviewApiResponse {
   catalog: PoCatalogItem[] | null
   hitlThreshold: number | null
   done: boolean
+  enrichment?: EnrichmentCard[]
 }
 
 function nowIso(): string {
@@ -129,7 +158,7 @@ function applyTurn(state: PoInterviewState, data: PoInterviewApiResponse, userMe
   state.catalog = data.catalog ?? state.catalog
   state.hitlThreshold = data.hitlThreshold ?? state.hitlThreshold
   state.done = data.done
-  return { state, reply: data.reply, done: data.done }
+  return { state, reply: data.reply, done: data.done, enrichment: data.enrichment }
 }
 
 function createPoInterview(): PoInterviewState {

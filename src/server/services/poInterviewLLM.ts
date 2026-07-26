@@ -11,6 +11,7 @@
  */
 import type Anthropic from '@anthropic-ai/sdk'
 import { AnthropicNotConfiguredError, getAnthropicClient, isAnthropicConfigured, HAIKU_MODEL } from './anthropicClient.ts'
+import { ENRICHMENT_TOOLS, executeEnrichmentTool, type EnrichmentCard } from './enrichmentTools.ts'
 
 export interface PoTranscriptEntry {
   role: 'po' | 'user'
@@ -32,6 +33,8 @@ export interface PoKnownFields {
 export interface PoTurnResult extends PoKnownFields {
   reply: string
   done: boolean
+  /** Phase 2: structured, UI-ready cards from any enrichment tools called this turn — see enrichmentTools.ts. */
+  enrichment?: EnrichmentCard[]
 }
 
 /**
@@ -70,7 +73,8 @@ Rules:
 - Proactive nudges (order-entry path only): if the vendor/store name implies a specific retail category (sporting goods, grocery, footwear, etc.), name that category back to them and offer a short list of realistic seed items for it (e.g., "I noticed this is a sports store — want me to seed the catalog with a few Dick's Sporting Goods-style items to start?"). Separately, once at least a couple of catalog items with prices exist, propose a threshold discount rule alongside the approval threshold (e.g., "Should we also set a rule like 'spend $50 more to unlock 20% off'?"). At most ONE nudge per turn, never before the vendorName is at least known, and always optional — if the visitor ignores it or answers something else instead, drop it silently and continue with whatever field is still missing. Never let a nudge block or delay marking a field as confirmed.
 - Instant completion trigger: if the visitor's message is (or clearly amounts to) "andiamo", "build", "go", or "/build" — a direct signal they're ready to finalize right now — and all three fields (vendorName, catalog, hitlThreshold) are already confirmed from earlier in the conversation, respond with exactly: "Andiamo! Verifying the hand-off package..." and set done to true. If any field is genuinely still missing, don't fake completion just because they said the trigger word — briefly state what's still needed instead (still one thing at a time), but keep it especially terse since they're trying to move fast.
 - Once all three fields are confidently known, say so, thank the visitor, and tell them: "Ready to build your app? Click 'Build' below or type 'build' to launch it." Set done to true only at that point, and keep it true afterward.
-- Never invent values the visitor hasn't provided or confirmed.`
+- Never invent values the visitor hasn't provided or confirmed.
+- Live enrichment tools: you have get_recipe_details, get_sports_schedule_and_streams, and compare_grocery_prices. Call the matching tool whenever the visitor names a specific dish/recipe, a sports team's game, or a grocery item to price — then reference the real result (ingredients, game time/broadcast, or store prices) in your reply. Never say you don't have real-time/live data for these three things; call the tool instead. Still respect the itinerary lean-and-task-focused rule above — only call a tool for something the visitor actually brought up.`
 
 // Deliberately not using client.messages.parse() here: that helper's
 // documented path assumes a Zod-derived output_config.format, and this
@@ -137,6 +141,11 @@ function buildMessages(transcript: PoTranscriptEntry[], userMessage: string | nu
 
 const FALLBACK_REPLY = "Sorry, I didn't quite catch that — could you rephrase?"
 
+// Bounds the Phase 1 tool-resolution loop below — enough for a couple of
+// enrichment calls in one turn (e.g. a recipe *and* a grocery price check)
+// without risking an unbounded back-and-forth against a live API.
+const MAX_TOOL_ITERATIONS = 3
+
 export async function runPoInterviewTurn(
   transcript: PoTranscriptEntry[],
   known: PoKnownFields,
@@ -155,11 +164,54 @@ export async function runPoInterviewTurn(
   // vendorName/catalog/hitlThreshold extraction contract above/below it.
   const systemPrompt = templateOverlay ? `${SYSTEM_PROMPT}\n\n${templateOverlay}\n\n${knownSummary}` : `${SYSTEM_PROMPT}\n\n${knownSummary}`
 
-  const response = await getAnthropicClient().messages.create({
+  const client = getAnthropicClient()
+  const workingMessages = buildMessages(transcript, userMessage)
+  const collectedCards: EnrichmentCard[] = []
+
+  /**
+   * Phase 1 — classic tool-use loop (tools + tool_choice, no output_config):
+   * lets the model call the enrichment tools as many times as it needs
+   * within MAX_TOOL_ITERATIONS. Deliberately a *separate* call from Phase 2
+   * rather than passing `tools` and `output_config.format` together — the
+   * two features' interaction on a tool-calling turn isn't a documented,
+   * relied-upon contract, so this keeps each call to a single well-supported
+   * shape: free-form tool use here, schema-constrained output below.
+   */
+  for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    const toolResponse = await client.messages.create({
+      model: HAIKU_MODEL,
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: workingMessages,
+      tools: ENRICHMENT_TOOLS,
+      tool_choice: { type: 'auto' },
+    })
+
+    if (toolResponse.stop_reason !== 'tool_use') break
+
+    workingMessages.push({ role: 'assistant', content: toolResponse.content })
+
+    const toolUseBlocks = toolResponse.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+    const toolResults: Anthropic.ToolResultBlockParam[] = toolUseBlocks.map((toolUse) => {
+      const result = executeEnrichmentTool(toolUse.name, (toolUse.input ?? {}) as Record<string, unknown>)
+      if (result) collectedCards.push(result.card)
+      return {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content: result ? result.content : `Unknown tool: ${toolUse.name}`,
+        is_error: !result,
+      }
+    })
+    workingMessages.push({ role: 'user', content: toolResults })
+  }
+
+  // Phase 2 — same structured-output contract as before, now grounded in
+  // whatever tool results Phase 1 gathered (they're already in `workingMessages`).
+  const response = await client.messages.create({
     model: HAIKU_MODEL,
     max_tokens: 1024,
     system: systemPrompt,
-    messages: buildMessages(transcript, userMessage),
+    messages: workingMessages,
     output_config: { format: { type: 'json_schema', schema: RESPONSE_SCHEMA } },
   })
 
@@ -174,5 +226,5 @@ export async function runPoInterviewTurn(
   }
 
   if (!isPoTurnResult(parsed)) return { reply: FALLBACK_REPLY, ...known, done: false }
-  return parsed
+  return collectedCards.length > 0 ? { ...parsed, enrichment: collectedCards } : parsed
 }

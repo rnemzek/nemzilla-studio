@@ -1,4 +1,4 @@
-import { For, Show, createMemo, onCleanup, onMount } from 'solid-js'
+import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { sandboxStore, type PreviewTab } from '../lib/sandboxStore.ts'
 import { SANDBOX_FRAME_PATH } from '../lib/sandboxTemplate.ts'
 import { policyTrajectoryState, TRAJECTORY_STAGES, decisionLabel } from '../lib/policyTrajectoryStore.ts'
@@ -7,7 +7,11 @@ import SaveRecipeModal from './SaveRecipeModal.tsx'
 import PublishModal from './PublishModal.tsx'
 import ArtifactsPanel from './ArtifactsPanel.tsx'
 import PanelHelpButton from './PanelHelpButton.tsx'
+import FloatingShell from './FloatingShell.tsx'
+import { openFloat } from '../lib/floatingWindowStore.ts'
 import { visitorState } from '../lib/visitorStore.ts'
+
+const FLOAT_ID = 'app-preview'
 
 const DEFAULT_PROMPT = 'ACME Order'
 
@@ -24,8 +28,11 @@ const TABS: Array<{ id: PreviewTab; label: string }> = [
   { id: 'artifacts', label: 'Artifacts / Telemetry' },
 ]
 
+type FrameMode = 'mobile' | 'desktop'
+
 export default function AppPreview() {
   const sandbox = sandboxStore
+  const [frameMode, setFrameMode] = createSignal<FrameMode>('mobile')
   let frameRef: HTMLIFrameElement | undefined
 
   onMount(() => {
@@ -63,6 +70,7 @@ export default function AppPreview() {
   }
 
   return (
+    <FloatingShell id={FLOAT_ID} title="App Preview" defaultWidth={460}>
     <section
       data-testid="app-preview"
       class="relative w-full max-w-2xl rounded-lg border border-border bg-surface text-left shadow-lg"
@@ -76,7 +84,15 @@ export default function AppPreview() {
         "looks fine when ready, breaks while building" bug that's easy to
         miss without actually loading the page.
       */}
-      <div class="absolute right-3 top-2">
+      <div class="absolute right-3 top-2 flex items-center gap-1.5">
+        <button
+          type="button"
+          title="Detach / Float Window"
+          class="flex h-5 w-5 items-center justify-center rounded-full border border-border text-[10px] text-text-muted transition-colors hover:border-accent hover:text-accent"
+          onClick={() => openFloat(FLOAT_ID, 460)}
+        >
+          ⤢
+        </button>
         <PanelHelpButton title="App Preview">
           <p>
             The generated micro-app itself, running live in an isolated sandbox — plus its raw
@@ -117,9 +133,29 @@ export default function AppPreview() {
       </div>
 
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-1.5 text-[11px]">
-        <span class="text-text-muted">
-          Domain: <span class="font-medium text-text">{activeTemplate().name}</span>
-        </span>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-text-muted">
+            Domain: <span class="font-medium text-text">{activeTemplate().name}</span>
+          </span>
+          <div class="flex items-center overflow-hidden rounded border border-border">
+            <button
+              type="button"
+              title="Desktop preview"
+              class={`px-1.5 py-0.5 transition-colors ${frameMode() === 'desktop' ? 'bg-surface-raised text-text' : 'text-text-muted hover:text-text'}`}
+              onClick={() => setFrameMode('desktop')}
+            >
+              🖥️ Desktop
+            </button>
+            <button
+              type="button"
+              title="Mobile preview"
+              class={`px-1.5 py-0.5 transition-colors ${frameMode() === 'mobile' ? 'bg-surface-raised text-text' : 'text-text-muted hover:text-text'}`}
+              onClick={() => setFrameMode('mobile')}
+            >
+              📱 Mobile
+            </button>
+          </div>
+        </div>
         <Show
           when={activeTemplate().previewScenario}
           fallback={<span class="text-text-muted italic">Preview coming soon for this domain</span>}
@@ -167,19 +203,35 @@ export default function AppPreview() {
       </Show>
 
       {/*
-        UAT fix: the sandboxed preview now renders inside a mock device
-        shell (status bar + rounded device border) rather than a bare
-        iframe, so App Preview reads as "a phone showing your app" instead
-        of "an embedded webpage." The status bar's time is deliberately a
-        static mock (matching the classic App Store screenshot convention),
-        not a live clock — this is chrome, not a feature. No new scroll
+        UAT fix: the sandboxed preview renders inside a mock device shell
+        (status bar + rounded device border) in "Mobile" mode, so App Preview
+        reads as "a phone showing your app" instead of "an embedded webpage."
+        The status bar's time is deliberately a static mock (matching the
+        classic App Store screenshot convention), not a live clock — chrome,
+        not a feature. "Desktop" mode drops that chrome for a plain
+        browser-like rectangle instead.
+
+        The chrome is toggled with `classList` on a single always-mounted
+        wrapper rather than swapping between two `<Show>` branches — the
+        iframe itself (and the live sandbox document inside it) must never
+        remount when flipping the toggle, same reasoning as FloatingShell.tsx
+        not remounting a panel's DOM subtree on detach/re-dock. No new scroll
         container is introduced (the iframe still just fills the frame's
         remaining height), so there's still exactly one scrollbar: whatever
         the generated app's own document produces internally.
       */}
       <div class="h-80 bg-bg p-3" classList={{ hidden: sandbox.state.tab !== 'preview' }}>
-        <div class="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900/90 shadow-2xl">
-          <div class="flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-[10px] font-medium text-slate-300">
+        <div
+          class="flex h-full flex-col overflow-hidden border shadow-lg"
+          classList={{
+            'rounded-2xl border-slate-700/80 bg-slate-900/90 shadow-2xl': frameMode() === 'mobile',
+            'rounded-lg border-border bg-white': frameMode() === 'desktop',
+          }}
+        >
+          <div
+            class="flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-[10px] font-medium text-slate-300"
+            classList={{ hidden: frameMode() !== 'mobile' }}
+          >
             <span class="font-mono">9:41</span>
             <div class="flex items-center gap-2">
               <span aria-hidden="true">📶</span>
@@ -220,5 +272,6 @@ export default function AppPreview() {
         </p>
       )}
     </section>
+    </FloatingShell>
   )
 }

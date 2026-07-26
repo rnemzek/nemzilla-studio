@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient.ts'
-import { startPoInterview, submitPoAnswer, SYSTEM_ORDER_CEILING, type PoInterviewState } from './poInterview.ts'
+import { startPoInterview, submitPoAnswer, SYSTEM_ORDER_CEILING, type PoInterviewState, type EnrichmentCard } from './poInterview.ts'
 import { getSessionBundle, putSessionArtifact, type SessionBundle } from './sessionBundleClient.ts'
 import { sandboxStore } from './sandboxStore.ts'
 import { publishInterviewSnapshot, interviewState } from './interviewStore.ts'
@@ -12,7 +12,7 @@ import { TEMPLATE_REGISTRY, getActiveTemplate, setActiveTemplate } from './templ
 export type OutputKind = 'input' | 'output' | 'error' | 'system' | 'po'
 
 export interface CommandContext {
-  print: (text: string, kind?: OutputKind) => void
+  print: (text: string, kind?: OutputKind, cards?: EnrichmentCard[]) => void
   clear: () => void
 }
 
@@ -158,8 +158,8 @@ async function runMetrics(ctx: CommandContext) {
 let activeInterview: PoInterviewState | null = null
 
 /** The RN avatar (rendered by Terminal.tsx for 'po'-kind lines) replaces the old literal "[AI PO] " text prefix. */
-function printPo(ctx: CommandContext, message: string) {
-  ctx.print(message, 'po')
+function printPo(ctx: CommandContext, message: string, cards?: EnrichmentCard[]) {
+  ctx.print(message, 'po', cards)
 }
 
 /**
@@ -172,7 +172,7 @@ async function startInterview(ctx: CommandContext, openingMessage?: string): Pro
   const step = await startPoInterview(openingMessage)
   activeInterview = step.state
   publishInterviewSnapshot(activeInterview)
-  printPo(ctx, step.reply)
+  printPo(ctx, step.reply, step.enrichment)
 }
 
 /** Best-effort persistence — Task 11.1's session bundle recorder; failures are logged client-side but never block the conversation. */
@@ -230,7 +230,7 @@ async function continueInterview(ctx: CommandContext, rawInput: string): Promise
   const state = activeInterview!
   const step = await submitPoAnswer(state, rawInput)
   publishInterviewSnapshot(state)
-  printPo(ctx, step.reply)
+  printPo(ctx, step.reply, step.enrichment)
 
   if (step.done) {
     await persistInterviewArtifacts(state)

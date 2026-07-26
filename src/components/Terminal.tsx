@@ -5,11 +5,18 @@ import { interviewState } from '../lib/interviewStore.ts'
 import { visitorState } from '../lib/visitorStore.ts'
 import RnAvatar from './RnAvatar.tsx'
 import PanelHelpButton from './PanelHelpButton.tsx'
+import FloatingShell from './FloatingShell.tsx'
+import EnrichmentCardView from './EnrichmentCardView.tsx'
+import { openFloat } from '../lib/floatingWindowStore.ts'
+import type { EnrichmentCard } from '../lib/poInterview.ts'
+
+const FLOAT_ID = 'agentz-terminal'
 
 interface TerminalLine {
   id: number
   kind: OutputKind
   text: string
+  cards?: EnrichmentCard[]
 }
 
 let nextLineId = 0
@@ -47,10 +54,10 @@ export default function Terminal() {
   let inputRef: HTMLTextAreaElement | undefined
   let scrollRef: HTMLDivElement | undefined
 
-  const print = (text: string, kind: OutputKind = 'output') => {
+  const print = (text: string, kind: OutputKind = 'output', cards?: EnrichmentCard[]) => {
     setLines(
       produce((draft) => {
-        draft.push({ id: nextLineId++, kind, text })
+        draft.push({ id: nextLineId++, kind, text, cards })
       }),
     )
   }
@@ -204,6 +211,7 @@ export default function Terminal() {
   }
 
   return (
+    <FloatingShell id={FLOAT_ID} title="AgentZ" defaultWidth={420}>
     <section
       data-testid="terminal"
       class="w-full max-w-2xl rounded-lg border border-border bg-surface text-left font-mono text-sm shadow-lg"
@@ -240,6 +248,16 @@ export default function Terminal() {
             setExpanded((v) => !v)
           }}
         />
+        <button
+          type="button"
+          aria-label="Detach / Float Window"
+          title="Detach / Float Window"
+          class="h-2.5 w-2.5 rounded-full bg-accent/70 transition-colors hover:bg-accent"
+          onClick={(event) => {
+            event.stopPropagation()
+            openFloat(FLOAT_ID, 420)
+          }}
+        />
         <span class="ml-2">AgentZ</span>
         <div class="ml-auto">
           <PanelHelpButton title="AgentZ Chat">
@@ -269,12 +287,19 @@ export default function Terminal() {
                 when={line.kind === 'po'}
                 fallback={<p class={`whitespace-pre-wrap ${kindClass(line.kind)}`}>{line.text}</p>}
               >
-                <p class={`flex items-start gap-2 whitespace-pre-wrap ${kindClass(line.kind)}`}>
-                  <RnAvatar size={16} class="mt-0.5 shrink-0" />
-                  <span>
-                    <span class="font-semibold">AI PO:</span> {line.text}
-                  </span>
-                </p>
+                <div>
+                  <p class={`flex items-start gap-2 whitespace-pre-wrap ${kindClass(line.kind)}`}>
+                    <RnAvatar size={16} class="mt-0.5 shrink-0" />
+                    <span>
+                      <span class="font-semibold">AI PO:</span> {line.text}
+                    </span>
+                  </p>
+                  <Show when={line.cards && line.cards.length > 0}>
+                    <div class="ml-6">
+                      <For each={line.cards}>{(card) => <EnrichmentCardView card={card} />}</For>
+                    </div>
+                  </Show>
+                </div>
               </Show>
             )}
           </For>
@@ -338,5 +363,6 @@ export default function Terminal() {
         </div>
       </Show>
     </section>
+    </FloatingShell>
   )
 }

@@ -2,11 +2,15 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount }
 import { createStore, produce, reconcile } from 'solid-js/store'
 import { createForceLayout, runLayoutSimulation, type SimLink } from '../lib/swarmLayout.ts'
 import { createSwarmStore, edgeKey, buildReplaySnapshot, type AgentName, type AgentStatus, type AgentState } from '../lib/swarmStore.ts'
-import { replayState, stopReplay, togglePlay, stepForward, stepBack, setSpeed } from '../lib/replayStore.ts'
+import { replayState, stopReplay, togglePlay, stepForward, stepBack, setSpeed, seekTo } from '../lib/replayStore.ts'
 import { activeTemplateId, getActiveTemplate } from '../lib/templateStore.ts'
 import type { AuditBlock } from '../lib/auditStore.ts'
 import RnAvatar from './RnAvatar.tsx'
 import PanelHelpButton from './PanelHelpButton.tsx'
+import FloatingShell from './FloatingShell.tsx'
+import { openFloat } from '../lib/floatingWindowStore.ts'
+
+const FLOAT_ID = 'swarm-canvas'
 
 const WIDTH = 480
 const HEIGHT = 220
@@ -311,6 +315,7 @@ export default function SwarmCanvas() {
   )
 
   return (
+    <FloatingShell id={FLOAT_ID} title="Swarm Canvas" defaultWidth={520}>
     <section data-testid="swarm-canvas" class="w-full max-w-2xl rounded-lg border border-border bg-surface p-4 shadow-lg">
       <div class="mb-2 flex items-center justify-between gap-2">
         <h2 class="text-left text-xs uppercase tracking-wide text-text-muted">Swarm</h2>
@@ -323,6 +328,14 @@ export default function SwarmCanvas() {
           <Show when={inReplay()}>
             <span class="text-[10px] font-medium uppercase tracking-wide text-accent">Replay Mode</span>
           </Show>
+          <button
+            type="button"
+            title="Detach / Float Window"
+            class="flex h-5 w-5 items-center justify-center rounded-full border border-border text-[10px] text-text-muted transition-colors hover:border-accent hover:text-accent"
+            onClick={() => openFloat(FLOAT_ID, 520)}
+          >
+            ⤢
+          </button>
           <PanelHelpButton title="Swarm Canvas">
             <p>
               A live view of the multi-agent pipeline — Planner, Architect, Lead Dev, and Reviewer (plus
@@ -373,6 +386,17 @@ export default function SwarmCanvas() {
           >
             ✕ Exit
           </button>
+          <input
+            type="range"
+            class="w-full accent-accent"
+            min={0}
+            max={Math.max(replayState.steps.length - 1, 0)}
+            step={1}
+            value={Math.max(replayState.stepIndex, 0)}
+            disabled={replayState.steps.length <= 1}
+            aria-label="Scrub to a step in this run"
+            onInput={(event) => seekTo(Number(event.currentTarget.value))}
+          />
         </div>
       </Show>
 
@@ -563,5 +587,6 @@ export default function SwarmCanvas() {
         </div>
       </Show>
     </section>
+    </FloatingShell>
   )
 }

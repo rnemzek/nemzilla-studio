@@ -2,6 +2,10 @@ import { For, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import { auditStore, type ChainStatus, type PolicyStatus } from '../lib/auditStore.ts'
 import { copyDebugArtifacts } from '../lib/artifactExport.ts'
 import PanelHelpButton from './PanelHelpButton.tsx'
+import FloatingShell from './FloatingShell.tsx'
+import { openFloat } from '../lib/floatingWindowStore.ts'
+
+const FLOAT_ID = 'audit-ledger'
 
 const CHAIN_STATUS_LABEL: Record<ChainStatus, string> = {
   pending: 'verifying…',
@@ -53,6 +57,7 @@ export default function AuditLedgerPanel() {
   })
 
   return (
+    <FloatingShell id={FLOAT_ID} title="Audit Ledger" defaultWidth={440}>
     <section
       data-testid="audit-ledger-panel"
       class="flex w-full max-w-2xl flex-col rounded-lg border border-border bg-surface text-left shadow-lg"
@@ -70,6 +75,14 @@ export default function AuditLedgerPanel() {
             onClick={() => void handleCopyArtifacts()}
           >
             {copied() ? '✅ Copied!' : '📋 Copy Debug Artifacts'}
+          </button>
+          <button
+            type="button"
+            title="Detach / Float Window"
+            class="flex h-5 w-5 items-center justify-center rounded-full border border-border text-[10px] text-text-muted transition-colors hover:border-accent hover:text-accent"
+            onClick={() => openFloat(FLOAT_ID, 440)}
+          >
+            ⤢
           </button>
           <PanelHelpButton title="Audit Ledger">
             <p>
@@ -109,5 +122,6 @@ export default function AuditLedgerPanel() {
         </For>
       </div>
     </section>
+    </FloatingShell>
   )
 }

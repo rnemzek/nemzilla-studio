@@ -499,4 +499,35 @@ this section doesn't read as already delivered.
   confirms `rendered` on any future load. Verified end-to-end: checking boxes, relaunching the preview,
   and confirming the same boxes come back checked.
 
+---
 
+# DO OVER
+
+```
+       ┌────────────────────────────────────────────────────────┐
+       │               PHASE 3 & 4 ARCHITECTURE                 │
+       └───────────────────────────┬────────────────────────────┘
+                                   │
+         ┌─────────────────────────┴─────────────────────────┐
+         ▼                                                   ▼
+┌───────────────────────────┐                     ┌────────────────────┐
+│ Swarm Replay Scrubber     │                     │ Mobile Export Target│
+│ ├─ Delta Packet Buffer    │                     ├─ App Preview Shell │
+│ ├─ Scrubber HUD Controls  │                     ├─ Instant Edge Link │
+│ └─ [1x / 2x / Reverse]    │                     └─ SVG QR Generator  │
+└───────────────────────────┘                     └────────────────────┘
+```
+
+1. Agent Swarm Replay Scrubber Bar
+Objective: Allow users to scrub through raw agent execution events (prompting, planning, code generation, audit validation) in real time or post-run.
+
+Control UI: [ Play ▶ ] [ Pause ⏸ ] [ 1x / 2x ] scrubber slider over the agent sequence timeline.
+
+HUD Data: Displays the exact raw agent prompt/response HUD packets corresponding to the frame state.
+
+2. Mobile Target & One-Click 🚀 Export
+Objective: Give generated apps a native mobile frame preview and instant sharing capability.
+
+Share Engine: Generate an instant short URL (/share/:slug) and dynamic inline SVG QR code for immediate testing on physical mobile devices.
+
+---

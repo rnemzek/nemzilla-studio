@@ -121,7 +121,11 @@ async function runSwarmStage(
   emit({
     name: 'agent_step',
     broadcast: { agent, state: 'EXECUTING', timestamp: new Date().toISOString() },
-    audit: { payload: { agent, state: 'EXECUTING', ...auditExtra } },
+    // `thought` is included in the audit payload (not just the token_stream
+    // broadcast) so the Replay Inspector card — which only has access to
+    // audit blocks, not the live broadcast stream — has real content to
+    // show for this step instead of nothing.
+    audit: { payload: { agent, state: 'EXECUTING', thought, ...auditExtra } },
   })
 
   for (const word of thought.split(' ')) {
@@ -134,14 +138,15 @@ async function runSwarmStage(
   await options?.onTokensDone?.()
   if (isAborted(sessionId)) return false
 
+  const latencyMs = Date.now() - startedAt
   emit({
     name: 'metric_tick',
-    broadcast: { agent, latencyMs: Date.now() - startedAt, memoryMb: heapMb(), timestamp: new Date().toISOString() },
+    broadcast: { agent, latencyMs, memoryMb: heapMb(), timestamp: new Date().toISOString() },
   })
   emit({
     name: 'agent_step',
     broadcast: { agent, state: 'DONE', timestamp: new Date().toISOString() },
-    audit: { payload: { agent, state: 'DONE', ...auditExtra } },
+    audit: { payload: { agent, state: 'DONE', thought, latencyMs, ...auditExtra } },
   })
 
   return true
@@ -186,7 +191,7 @@ async function runPipeline(sessionId: string, prompt?: string): Promise<void> {
     emit({
       name: 'agent_step',
       broadcast: { agent, state: 'EXECUTING', timestamp: new Date().toISOString() },
-      audit: { payload: { agent, state: 'EXECUTING' } },
+      audit: { payload: { agent, state: 'EXECUTING', thought } },
     })
 
     for (const word of thought.split(' ')) {
@@ -228,14 +233,15 @@ async function runPipeline(sessionId: string, prompt?: string): Promise<void> {
 
     if (isAborted(sessionId)) return
 
+    const latencyMs = Date.now() - startedAt
     emit({
       name: 'metric_tick',
-      broadcast: { agent, latencyMs: Date.now() - startedAt, memoryMb: heapMb(), timestamp: new Date().toISOString() },
+      broadcast: { agent, latencyMs, memoryMb: heapMb(), timestamp: new Date().toISOString() },
     })
     emit({
       name: 'agent_step',
       broadcast: { agent, state: 'DONE', timestamp: new Date().toISOString() },
-      audit: { payload: { agent, state: 'DONE' } },
+      audit: { payload: { agent, state: 'DONE', thought, latencyMs } },
     })
 
     await sleep(STAGE_GAP_MS)

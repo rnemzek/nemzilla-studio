@@ -1,4 +1,4 @@
-import { Show, type JSX } from 'solid-js'
+import { Show, createSignal, type JSX } from 'solid-js'
 import {
   windowState,
   isFloating,
@@ -24,6 +24,8 @@ function touchDist(touches: TouchList): number {
   return Math.hypot(dx, dy)
 }
 
+const SNAP_BACK_DURATION_MS = 220
+
 /**
  * Wraps a Studio panel so it can pop out of the Command Center grid into a
  * draggable, pinch-zoomable "glass" window (Portal-free: the panel's own DOM
@@ -42,9 +44,55 @@ export default function FloatingShell(props: FloatingShellProps) {
   let pinchStartDist = 0
   let pinchStartZoom = 1
   let lastTapAt = 0
+  let floatingRef: HTMLDivElement | undefined
+  let placeholderRef: HTMLDivElement | undefined
+  const [snapping, setSnapping] = createSignal(false)
+
+  /**
+   * Animates the floating window shrinking back into the dashed docked
+   * placeholder before actually flipping the store back to docked, instead
+   * of an instant cut. Reads the placeholder's *live* bounding rect rather
+   * than a cached "default docked anchor" — the placeholder already sits in
+   * the exact grid slot the panel returns to, and re-measuring it live
+   * keeps the animation correct across window resizes/scroll without a
+   * separate cache-invalidation path.
+   */
+  function handleSnapBack() {
+    if (snapping()) return
+    const floatEl = floatingRef
+    const target = placeholderRef
+    if (!floatEl || !target || win().maximized) {
+      closeFloat(props.id)
+      return
+    }
+    const targetRect = target.getBoundingClientRect()
+    setSnapping(true)
+    floatEl.style.transition = `top ${SNAP_BACK_DURATION_MS}ms ease-in, left ${SNAP_BACK_DURATION_MS}ms ease-in, transform ${SNAP_BACK_DURATION_MS}ms ease-in, opacity ${SNAP_BACK_DURATION_MS}ms ease-in`
+    requestAnimationFrame(() => {
+      floatEl.style.top = `${targetRect.top}px`
+      floatEl.style.left = `${targetRect.left}px`
+      floatEl.style.width = `${targetRect.width}px`
+      floatEl.style.transform = 'scale(0.85)'
+      floatEl.style.opacity = '0'
+    })
+    setTimeout(() => {
+      floatEl.style.transition = ''
+      setSnapping(false)
+      closeFloat(props.id)
+    }, SNAP_BACK_DURATION_MS)
+  }
 
   function handleDragStart(event: PointerEvent) {
     if (win().maximized) return
+    // The zoom/minimize/maximize/snap-back buttons live inside this same
+    // draggable header, and pointerdown bubbles from them up to here — an
+    // unconditional setPointerCapture() below would capture the pointer to
+    // the header on every button press too, which silently swallows the
+    // button's own click (the browser routes the follow-up click to
+    // whichever element holds capture, not the button that was actually
+    // pressed). Bail out before capturing when the press started on a
+    // button so those clicks reach their own handlers normally.
+    if ((event.target as HTMLElement).closest('button')) return
     bringToFront(props.id)
     const header = event.currentTarget as HTMLElement
     header.setPointerCapture(event.pointerId)
@@ -98,7 +146,10 @@ export default function FloatingShell(props: FloatingShellProps) {
   return (
     <div class="relative">
       <Show when={isFloating(props.id)}>
-        <div class="flex h-24 w-full items-center justify-center rounded-lg border border-dashed border-accent/40 bg-surface/40 text-center text-xs text-text-muted">
+        <div
+          ref={placeholderRef}
+          class="flex h-24 w-full items-center justify-center rounded-lg border border-dashed border-accent/40 bg-surface/40 text-center text-xs text-text-muted"
+        >
           <div>
             <p class="mb-1">
               ↗ <span class="font-medium text-text">{props.title}</span> is floating
@@ -106,7 +157,7 @@ export default function FloatingShell(props: FloatingShellProps) {
             <button
               type="button"
               class="rounded border border-accent/40 px-2 py-0.5 text-accent transition-colors hover:bg-accent/10"
-              onClick={() => closeFloat(props.id)}
+              onClick={handleSnapBack}
             >
               ⤓ Snap Back to Command Center
             </button>
@@ -115,8 +166,15 @@ export default function FloatingShell(props: FloatingShellProps) {
       </Show>
 
       <div
+        ref={floatingRef}
         classList={{
-          'fixed rounded-2xl border-2 border-accent-glow/60 bg-surface/85 backdrop-blur-md shadow-[0_0_48px_-10px_var(--color-accent-glow)] touch-none':
+          // True glassmorphism: a semi-transparent dark layer + backdrop
+          // blur/saturate so the Command Center behind the panel stays
+          // subtly visible, a soft white edge highlight (how light actually
+          // catches a glass pane's border, not a solid color), and a
+          // two-part shadow — a dark elevation shadow for physical lift plus
+          // the existing accent-purple glow so it stays on-brand.
+          'fixed rounded-2xl border border-white/10 bg-surface/75 backdrop-blur-md backdrop-saturate-[1.8] shadow-[0_8px_32px_-8px_rgba(0,0,0,0.55),0_0_48px_-10px_var(--color-accent-glow)] touch-none':
             isFloating(props.id),
           'inset-4': isFloating(props.id) && win().maximized,
           'z-50': isFloating(props.id),
@@ -133,7 +191,7 @@ export default function FloatingShell(props: FloatingShellProps) {
       >
         <Show when={isFloating(props.id)}>
           <div
-            class="flex cursor-grab touch-none items-center justify-between gap-2 rounded-t-2xl border-b border-accent-glow/30 bg-surface-raised/90 px-3 py-1.5 text-[11px] font-medium text-text active:cursor-grabbing"
+            class="flex cursor-grab touch-none items-center justify-between gap-2 rounded-t-2xl border-b border-white/10 bg-surface-raised/70 px-3 py-1.5 text-[11px] font-medium text-text backdrop-blur-sm active:cursor-grabbing"
             onPointerDown={handleDragStart}
           >
             <span class="truncate">↗ {props.title}</span>
@@ -165,7 +223,7 @@ export default function FloatingShell(props: FloatingShellProps) {
                 type="button"
                 title="Snap Back to Command Center"
                 class="whitespace-nowrap rounded border border-accent/40 px-1.5 py-0.5 text-accent hover:bg-accent/10"
-                onClick={() => closeFloat(props.id)}
+                onClick={handleSnapBack}
               >
                 ⤓ Snap Back
               </button>

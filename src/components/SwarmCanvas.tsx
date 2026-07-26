@@ -185,23 +185,55 @@ export default function SwarmCanvas() {
   const focusAgent = createMemo(() => replaySnapshot()?.focusAgent ?? null)
 
   const [hoveredAgent, setHoveredAgent] = createSignal<AgentName | null>(null)
+  // Click-to-pin (separate from hover): lets a visitor click a node to keep
+  // its step details open in the inspector after the pointer leaves, so the
+  // prompt/response text underneath is actually selectable rather than
+  // vanishing the moment the mouse moves toward it.
+  const [pinnedAgent, setPinnedAgent] = createSignal<AgentName | null>(null)
   createEffect(() => {
-    if (!inReplay()) setHoveredAgent(null)
+    if (!inReplay()) {
+      setHoveredAgent(null)
+      setPinnedAgent(null)
+    }
   })
 
   const inspectorBlock = createMemo<AuditBlock | null>(() => {
     const steps = replayState.steps
     if (steps.length === 0) return null
-    const hovered = hoveredAgent()
-    if (hovered) {
+    const focused = pinnedAgent() ?? hoveredAgent()
+    if (focused) {
       for (let i = Math.min(replayState.stepIndex, steps.length - 1); i >= 0; i--) {
         const step = steps[i]!
         const payload = (step.payload ?? {}) as Record<string, unknown>
-        if (step.action === 'agent_step' && String(payload.agent ?? '') === hovered) return step
+        if (step.action === 'agent_step' && String(payload.agent ?? '') === focused) return step
       }
       return null
     }
     return steps[replayState.stepIndex] ?? null
+  })
+
+  /**
+   * Sender → Receiver for whatever step `inspectorBlock()` resolved to —
+   * computed independently from `packetEdge()` below, which only ever
+   * reflects the *live* scrubber position's handoff. A pinned/hovered agent
+   * can be looking at an earlier step than the current scrubber position, so
+   * its sender has to be derived from that step's own place in the trace
+   * (the nearest preceding distinct agent), not the in-flight packet.
+   */
+  const inspectorHandoff = createMemo<{ sender: string; receiver: string } | null>(() => {
+    const block = inspectorBlock()
+    if (!block || block.action !== 'agent_step') return null
+    const payload = (block.payload ?? {}) as Record<string, unknown>
+    const receiver = String(payload.agent ?? '')
+    if (!receiver) return null
+    const steps = replayState.steps
+    const idx = steps.indexOf(block)
+    for (let i = idx - 1; i >= 0; i--) {
+      const p = (steps[i]!.payload ?? {}) as Record<string, unknown>
+      const sender = String(p.agent ?? '')
+      if (sender && sender !== receiver) return { sender, receiver }
+    }
+    return { sender: 'Kickoff', receiver }
   })
 
   // A brief tween (not SMIL) from the edge's source node to its target,
@@ -468,8 +500,10 @@ export default function SwarmCanvas() {
             return (
               <Show when={pos()}>
                 <g
+                  classList={{ 'cursor-pointer': inReplay() }}
                   onPointerEnter={() => inReplay() && setHoveredAgent(agent)}
                   onPointerLeave={() => setHoveredAgent((current) => (current === agent ? null : current))}
+                  onClick={() => inReplay() && setPinnedAgent((current) => (current === agent ? null : agent))}
                 >
                   <Show when={isPacketFocus(agent)}>
                     <circle
@@ -562,27 +596,64 @@ export default function SwarmCanvas() {
       <Show when={inReplay()}>
         <div class="mt-3 rounded-md border border-border/60 bg-bg px-3 py-2">
           <div class="mb-1 flex items-center justify-between text-[10px] text-text-muted">
-            <span>Packet Inspector{hoveredAgent() ? ` — ${hoveredAgent()}` : ''}</span>
-            <Show when={hoveredAgent()}>
-              <button type="button" class="text-accent hover:underline" onClick={() => setHoveredAgent(null)}>
+            <span>
+              Step Inspector
+              {pinnedAgent() ? ` — ${pinnedAgent()} 📌` : hoveredAgent() ? ` — ${hoveredAgent()}` : ''}
+            </span>
+            <Show when={pinnedAgent() || hoveredAgent()}>
+              <button
+                type="button"
+                class="text-accent hover:underline"
+                onClick={() => {
+                  setPinnedAgent(null)
+                  setHoveredAgent(null)
+                }}
+              >
                 Back to current step
               </button>
             </Show>
           </div>
           <Show when={inspectorBlock()} fallback={<p class="text-[11px] text-text-muted">No step data for this run.</p>}>
-            {(block) => (
-              <>
-                <p class="mb-1 text-[11px] text-text">
-                  <span class="font-medium">{block().action}</span>{' '}
-                  <span class="text-text-muted">
-                    {new Date(block().timestamp).toLocaleTimeString(undefined, { hour12: false })}
-                  </span>
-                </p>
-                <pre class="max-h-24 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] text-text-muted">
-                  {JSON.stringify(block().payload, null, 2)}
-                </pre>
-              </>
-            )}
+            {(block) => {
+              const payload = createMemo(() => (block().payload ?? {}) as Record<string, unknown>)
+              const thought = createMemo(() => (typeof payload().thought === 'string' ? (payload().thought as string) : null))
+              const latencyMs = createMemo(() => (typeof payload().latencyMs === 'number' ? (payload().latencyMs as number) : null))
+              const tokenCount = createMemo(() => thought()?.split(/\s+/).filter(Boolean).length ?? null)
+              const handoff = inspectorHandoff()
+              return (
+                <div class="space-y-1.5 text-[11px]" title="Click a swarm node to pin its step here — text stays selectable.">
+                  <p class="text-text">
+                    <span class="font-medium">{handoff ? `${handoff.sender} → ${handoff.receiver}` : block().action}</span>{' '}
+                    <span class="text-text-muted">
+                      · {block().action} · {new Date(block().timestamp).toLocaleTimeString(undefined, { hour12: false })}
+                    </span>
+                  </p>
+                  <Show when={thought()}>
+                    {(t) => (
+                      <div>
+                        <p class="font-medium text-accent">Agent Response</p>
+                        <p class="mt-0.5 max-h-20 select-text overflow-y-auto text-text-muted">{t()}</p>
+                      </div>
+                    )}
+                  </Show>
+                  <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-text-muted">
+                    <Show when={latencyMs() !== null}>
+                      <span>⏱ {latencyMs()}ms</span>
+                    </Show>
+                    <Show when={tokenCount() !== null}>
+                      <span>🔢 ~{tokenCount()} tokens</span>
+                    </Show>
+                    <span>📋 {block().policyStatus}</span>
+                  </div>
+                  <details>
+                    <summary class="cursor-pointer select-none text-[10px] text-text-muted hover:text-text">Raw payload</summary>
+                    <pre class="mt-1 max-h-24 select-text overflow-y-auto whitespace-pre-wrap font-mono text-[10px] text-text-muted">
+                      {JSON.stringify(block().payload, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+              )
+            }}
           </Show>
         </div>
       </Show>

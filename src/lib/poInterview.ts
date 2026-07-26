@@ -56,6 +56,15 @@ export interface PoInterviewState {
   catalog: PoCatalogItem[] | null
   hitlThreshold: number | null
   done: boolean
+  /**
+   * Priority 2.0: behavior rules the visitor has taught this PO via
+   * critique or "/calibrate" earlier in this session (see poInterviewLLM.ts's
+   * Meta-feedback rule) — re-sent on every subsequent turn so the server can
+   * inject them into the system prompt. This module (and the server route)
+   * is otherwise stateless per call; the browser tab is the only thing that
+   * persists this, same as the rest of PoInterviewState.
+   */
+  preferences: string[]
 }
 
 export interface PoInterviewStep {
@@ -63,6 +72,8 @@ export interface PoInterviewStep {
   reply: string
   done: boolean
   enrichment?: EnrichmentCard[]
+  /** Set only on the turn that just extracted it — see PoInterviewState.preferences for where it lives afterward. */
+  learnedRule?: string | null
 }
 
 // Mirrors policyEngine.ts's SYSTEM_CEILING.maxOrderThreshold (see
@@ -79,6 +90,7 @@ interface PoInterviewApiResponse {
   hitlThreshold: number | null
   done: boolean
   enrichment?: EnrichmentCard[]
+  learnedRule?: string | null
 }
 
 function nowIso(): string {
@@ -96,6 +108,7 @@ async function callInterviewApi(
   known: { vendorName: string | null; catalog: PoCatalogItem[] | null; hitlThreshold: number | null },
   userMessage: string | null,
   sessionId: string,
+  preferences: string[],
 ): Promise<PoInterviewApiResponse> {
   try {
     // Pass C: correlates this interview to a visitor (visitorStore.ts) and
@@ -122,6 +135,7 @@ async function callInterviewApi(
         visitorId: visitor.visitorId,
         handle: visitor.handle,
         templateId: templateExplicitlySet() ? activeTemplateId() : undefined,
+        preferences,
       }),
     })
     if (!res.ok) {
@@ -158,7 +172,10 @@ function applyTurn(state: PoInterviewState, data: PoInterviewApiResponse, userMe
   state.catalog = data.catalog ?? state.catalog
   state.hitlThreshold = data.hitlThreshold ?? state.hitlThreshold
   state.done = data.done
-  return { state, reply: data.reply, done: data.done, enrichment: data.enrichment }
+  if (data.learnedRule && !state.preferences.includes(data.learnedRule)) {
+    state.preferences = [...state.preferences, data.learnedRule]
+  }
+  return { state, reply: data.reply, done: data.done, enrichment: data.enrichment, learnedRule: data.learnedRule }
 }
 
 function createPoInterview(): PoInterviewState {
@@ -169,6 +186,7 @@ function createPoInterview(): PoInterviewState {
     catalog: null,
     hitlThreshold: null,
     done: false,
+    preferences: [],
   }
 }
 
@@ -182,13 +200,13 @@ function createPoInterview(): PoInterviewState {
 export async function startPoInterview(openingMessage?: string): Promise<PoInterviewStep> {
   const state = createPoInterview()
   const known = { vendorName: null, catalog: null, hitlThreshold: null }
-  const data = await callInterviewApi(state.transcript, known, openingMessage ?? null, state.sessionId)
+  const data = await callInterviewApi(state.transcript, known, openingMessage ?? null, state.sessionId, state.preferences)
   return applyTurn(state, data, openingMessage ?? null)
 }
 
 /** Advances the interview by one user answer. */
 export async function submitPoAnswer(state: PoInterviewState, userMessage: string): Promise<PoInterviewStep> {
   const known = { vendorName: state.vendorName, catalog: state.catalog, hitlThreshold: state.hitlThreshold }
-  const data = await callInterviewApi(state.transcript, known, userMessage, state.sessionId)
+  const data = await callInterviewApi(state.transcript, known, userMessage, state.sessionId, state.preferences)
   return applyTurn(state, data, userMessage)
 }

@@ -40,6 +40,14 @@ function checkPoInterviewRateLimit(now: number = Date.now()): boolean {
 
 const MAX_TRANSCRIPT_LENGTH = 200
 const MAX_MESSAGE_LENGTH = 2000
+const MAX_PREFERENCES = 20
+const MAX_PREFERENCE_LENGTH = 300
+
+/** Priority 2.0: learned session rules (see poInterviewLLM.ts's Meta-feedback rule) — optional, absent on any client that predates this. */
+function isValidPreferences(v: unknown): v is string[] | undefined {
+  if (v === undefined) return true
+  return Array.isArray(v) && v.length <= MAX_PREFERENCES && v.every((p) => typeof p === 'string' && p.length <= MAX_PREFERENCE_LENGTH)
+}
 
 function isValidTranscript(v: unknown): v is PoTranscriptEntry[] {
   return (
@@ -86,7 +94,7 @@ export async function poInterviewHandler(c: Context) {
     return c.json({ error: 'invalid JSON body' }, 400)
   }
 
-  const { transcript, known, userMessage, sessionId, visitorId, handle, templateId } = (body ?? {}) as {
+  const { transcript, known, userMessage, sessionId, visitorId, handle, templateId, preferences } = (body ?? {}) as {
     transcript?: unknown
     known?: unknown
     userMessage?: unknown
@@ -94,6 +102,7 @@ export async function poInterviewHandler(c: Context) {
     visitorId?: unknown
     handle?: unknown
     templateId?: unknown
+    preferences?: unknown
   }
 
   if (!isValidTranscript(transcript) || transcript.length > MAX_TRANSCRIPT_LENGTH) {
@@ -105,13 +114,16 @@ export async function poInterviewHandler(c: Context) {
   if (userMessage !== null && userMessage !== undefined && (typeof userMessage !== 'string' || userMessage.length > MAX_MESSAGE_LENGTH)) {
     return c.json({ error: 'invalid userMessage' }, 400)
   }
+  if (!isValidPreferences(preferences)) {
+    return c.json({ error: 'invalid preferences' }, 400)
+  }
 
   try {
     // Pass E: an unrecognized/omitted templateId just means no overlay is
     // applied — the base discovery prompt still works standalone, so an old
     // client or a bad id degrades gracefully rather than erroring.
     const templateOverlay = typeof templateId === 'string' ? (getTemplate(templateId)?.systemPromptOverlay ?? undefined) : undefined
-    const result = await runPoInterviewTurn(transcript, known, typeof userMessage === 'string' ? userMessage : null, templateOverlay)
+    const result = await runPoInterviewTurn(transcript, known, typeof userMessage === 'string' ? userMessage : null, templateOverlay, preferences)
 
     // Pass C: correlates this interview to a visitor and audit-logs the turn
     // in real time (tagged by the interview's own sessionId, the same field

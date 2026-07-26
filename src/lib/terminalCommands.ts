@@ -33,6 +33,7 @@ export const SLASH_COMMANDS: SlashCommandInfo[] = [
   { name: 'andiamo', usage: '/andiamo', description: 'Launch the swarm build from a completed interview.' },
   { name: 'replay', usage: '/replay', description: 'Replay the current session step-by-step on the Swarm Canvas.' },
   { name: 'reset', usage: '/reset', description: 'Cancel any active interview and start fresh.' },
+  { name: 'calibrate', usage: '/calibrate <feedback>', description: 'Give the AI PO explicit behavioral feedback (e.g. "be more concise").' },
   { name: 'run', usage: '/run [task]', description: 'Stream the full agent pipeline, verbose.' },
   { name: 'triad', usage: '/triad [task]', description: 'Condensed agent pipeline status pass.' },
   { name: 'metrics', usage: '/metrics', description: 'Query /api/health for live status and latency.' },
@@ -163,6 +164,19 @@ function printPo(ctx: CommandContext, message: string, cards?: EnrichmentCard[])
 }
 
 /**
+ * Priority 2.0: whenever a turn's structured response includes a
+ * learnedRule (poInterview.ts's applyTurn() already folded it into
+ * state.preferences by the time this runs), surface a visible confirmation
+ * — otherwise "the PO adjusted its behavior" is an invisible, untrustable
+ * claim. Shared by both startInterview() and continueInterview() since
+ * either can trigger it: calibration isn't gated behind /calibrate, it's
+ * detected from ordinary critique too (see poInterviewLLM.ts's Meta-feedback rule).
+ */
+function printLearnedRule(ctx: CommandContext, step: { learnedRule?: string | null }) {
+  if (step.learnedRule) ctx.print(`🧭 Calibrated: "${step.learnedRule}"`, 'system')
+}
+
+/**
  * Starts a fresh interview. `openingMessage`, when given, is the user's own
  * free text (Pass D: *all* free text routes here when no interview is
  * active) — it becomes the first real turn of the conversation instead of
@@ -173,6 +187,26 @@ async function startInterview(ctx: CommandContext, openingMessage?: string): Pro
   activeInterview = step.state
   publishInterviewSnapshot(activeInterview)
   printPo(ctx, step.reply, step.enrichment)
+  printLearnedRule(ctx, step)
+}
+
+/**
+ * Explicit calibration trigger (Priority 2.0's "Calibrate PO" UI/chat
+ * action) — sends the visitor's critique as a clearly-labeled turn so the
+ * PO doesn't have to infer intent from ambiguous phrasing the way it does
+ * for organic mid-conversation critique. Requires an interview to already
+ * exist since there's no PO behavior yet to calibrate otherwise.
+ */
+async function runCalibrate(ctx: CommandContext, feedback: string): Promise<void> {
+  if (!feedback.trim()) {
+    ctx.print('Usage: /calibrate <feedback> — e.g. "/calibrate be more concise" or "/calibrate stop asking about budget".', 'error')
+    return
+  }
+  if (!activeInterview) {
+    ctx.print('Start a discovery interview first (just tell AgentZ what you want to build), then /calibrate to adjust how the PO behaves.', 'error')
+    return
+  }
+  await continueInterview(ctx, `[Calibration request] ${feedback.trim()}`)
 }
 
 /** Best-effort persistence — Task 11.1's session bundle recorder; failures are logged client-side but never block the conversation. */
@@ -231,6 +265,7 @@ async function continueInterview(ctx: CommandContext, rawInput: string): Promise
   const step = await submitPoAnswer(state, rawInput)
   publishInterviewSnapshot(state)
   printPo(ctx, step.reply, step.enrichment)
+  printLearnedRule(ctx, step)
 
   if (step.done) {
     await persistInterviewArtifacts(state)
@@ -416,6 +451,9 @@ async function runSlashCommand(ctx: CommandContext, rawInput: string): Promise<v
       break
     case 'reset':
       runReset(ctx)
+      break
+    case 'calibrate':
+      await runCalibrate(ctx, args.join(' '))
       break
     case '':
       HELP_TEXT.forEach((line) => ctx.print(line, 'output'))

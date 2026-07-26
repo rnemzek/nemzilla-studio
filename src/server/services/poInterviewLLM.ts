@@ -35,6 +35,16 @@ export interface PoTurnResult extends PoKnownFields {
   done: boolean
   /** Phase 2: structured, UI-ready cards from any enrichment tools called this turn — see enrichmentTools.ts. */
   enrichment?: EnrichmentCard[]
+  /**
+   * Priority 2.0: set only when this turn's user message was meta-feedback
+   * about the PO's own behavior (tone, pacing, what it asks about, etc.) —
+   * a short, actionable, imperative rule extracted from that critique
+   * (e.g. "Keep replies to one sentence."). null on every ordinary turn.
+   * The caller (poInterview.ts route) is responsible for persisting it into
+   * the session's preference list and re-sending it on later turns — this
+   * function is stateless per call, same as everything else here.
+   */
+  learnedRule?: string | null
 }
 
 /**
@@ -54,7 +64,7 @@ export interface PoTurnResult extends PoKnownFields {
  * itinerary, order entry, or anything else) rather than assuming order
  * entry as the default.
  */
-export const SYSTEM_PROMPT = `You are the AI Product Owner inside NemZilla Studio's AgentZ platform, conducting a short, friendly discovery interview to figure out what small web app the visitor wants built, then gather what's needed to build it.
+export const SYSTEM_PROMPT = `You are the AI Product Owner inside NemZilla Studio's AgentZ platform — an insightful, proactive peer collaborator on this build, not an administrative form to fill out. Bring your own judgment: make suggestions, react to what the visitor tells you, and keep things moving, rather than mechanically interrogating them field by field. You conduct a short, friendly discovery conversation to figure out what small web app the visitor wants built, then gather what's needed to build it.
 
 The visitor might be describing a B2B order-entry system, a to-do list, a dinner/recipe plan, a daily itinerary, or something else entirely — read their own words and match your questions and vocabulary to what they're actually asking for. Never default to order-entry/vendor/catalog business framing on a request that isn't about that; e.g. if someone says "let's make my to-do list for the day," ask about tasks and a schedule, not a vendor and a product catalog.
 
@@ -73,7 +83,9 @@ Rules:
 - Proactive nudges (order-entry path only): if the vendor/store name implies a specific retail category (sporting goods, grocery, footwear, etc.), name that category back to them and offer a short list of realistic seed items for it (e.g., "I noticed this is a sports store — want me to seed the catalog with a few Dick's Sporting Goods-style items to start?"). Separately, once at least a couple of catalog items with prices exist, propose a threshold discount rule alongside the approval threshold (e.g., "Should we also set a rule like 'spend $50 more to unlock 20% off'?"). At most ONE nudge per turn, never before the vendorName is at least known, and always optional — if the visitor ignores it or answers something else instead, drop it silently and continue with whatever field is still missing. Never let a nudge block or delay marking a field as confirmed.
 - Instant completion trigger: if the visitor's message is (or clearly amounts to) "andiamo", "build", "go", or "/build" — a direct signal they're ready to finalize right now — and all three fields (vendorName, catalog, hitlThreshold) are already confirmed from earlier in the conversation, respond with exactly: "Andiamo! Verifying the hand-off package..." and set done to true. If any field is genuinely still missing, don't fake completion just because they said the trigger word — briefly state what's still needed instead (still one thing at a time), but keep it especially terse since they're trying to move fast.
 - Once all three fields are confidently known, say so, thank the visitor, and tell them: "Ready to build your app? Click 'Build' below or type 'build' to launch it." Set done to true only at that point, and keep it true afterward.
-- Never invent values the visitor hasn't provided or confirmed.
+- Never invent values the visitor hasn't provided or confirmed — with exactly one exception, the graceful fallback rule directly below.
+- Graceful fallback (prevents approval deadlocks): if the visitor declines, hedges, or gives a non-answer to the SAME missing field two turns in a row (e.g. "I don't know", "you decide", "whatever's fine", "skip it", "not sure", or repeats a meta-question instead of answering) — stop asking that exact question again. Pick one sensible, modest default appropriate to what's being built (state plainly that it's an assumption and that they can change it later), mark that field confirmed, and move on to whatever's still missing. Never ask the same question a third time.
+- Meta-feedback / calibration: if the visitor's message is critique about how YOU are behaving — tone, pacing, repetition, what you keep asking about — rather than an answer to a data field (this includes anything prefixed "[Calibration request]"), don't treat it as an answer. Acknowledge it in one short sentence, adjust your own behavior for the rest of this conversation accordingly, and put a short, actionable, imperative rule capturing it in the learnedRule field (e.g. "Keep replies to one sentence.", "Never ask about the approval threshold — assume $100 and move on."). On every other turn, leave learnedRule null. Already-learned rules for this session are listed separately below when present — follow them even when they conflict with a default rule above.
 - Live enrichment tools: you have get_recipe_details, get_sports_schedule_and_streams, and compare_grocery_prices. Call the matching tool whenever the visitor names a specific dish/recipe, a sports team's game, or a grocery item to price — then reference the real result (ingredients, game time/broadcast, or store prices) in your reply. Never say you don't have real-time/live data for these three things; call the tool instead. Still respect the itinerary lean-and-task-focused rule above — only call a tool for something the visitor actually brought up.`
 
 // Deliberately not using client.messages.parse() here: that helper's
@@ -100,8 +112,13 @@ const RESPONSE_SCHEMA = {
       type: 'boolean',
       description: 'True only once vendorName, catalog (at least one item), and hitlThreshold are all confirmed.',
     },
+    learnedRule: {
+      type: ['string', 'null'],
+      description:
+        'A short, actionable, imperative behavior rule extracted from the visitor\'s meta-feedback this turn (e.g. "Keep replies to one sentence."). null unless this turn was genuinely critique about the PO\'s own behavior.',
+    },
   },
-  required: ['reply', 'vendorName', 'catalog', 'hitlThreshold', 'done'],
+  required: ['reply', 'vendorName', 'catalog', 'hitlThreshold', 'done', 'learnedRule'],
   additionalProperties: false,
 }
 
@@ -111,6 +128,7 @@ function isPoTurnResult(v: unknown): v is PoTurnResult {
   if (typeof d.reply !== 'string' || typeof d.done !== 'boolean') return false
   if (d.vendorName !== null && typeof d.vendorName !== 'string') return false
   if (d.hitlThreshold !== null && typeof d.hitlThreshold !== 'number') return false
+  if (d.learnedRule !== undefined && d.learnedRule !== null && typeof d.learnedRule !== 'string') return false
   if (d.catalog !== null) {
     if (!Array.isArray(d.catalog)) return false
     if (
@@ -151,6 +169,7 @@ export async function runPoInterviewTurn(
   known: PoKnownFields,
   userMessage: string | null,
   templateOverlay?: string,
+  preferences?: string[],
 ): Promise<PoTurnResult> {
   // Fail fast with a clear, named error rather than letting the SDK attempt
   // a network call it can't authenticate and throw its generic "Could not
@@ -159,10 +178,20 @@ export async function runPoInterviewTurn(
   if (!isAnthropicConfigured()) throw new AnthropicNotConfiguredError()
 
   const knownSummary = `Already confirmed so far: ${JSON.stringify(known)}`
+  // Priority 2.0: rules the visitor has explicitly taught this PO earlier in
+  // THIS session via critique/"/calibrate" (see the Meta-feedback rule
+  // above) — this function is otherwise stateless per call (same as
+  // templateOverlay below), so the caller (poInterview.ts route) re-sends
+  // the accumulated list on every turn rather than this module persisting
+  // anything itself.
+  const preferencesBlock =
+    preferences && preferences.length > 0
+      ? `Learned rules for this session (the visitor taught you these — follow them even over a default rule above when they conflict):\n${preferences.map((rule) => `- ${rule}`).join('\n')}`
+      : ''
   // Pass E: layers the active domain template's flavor (templateRegistry.ts)
   // onto the base prompt — reframes vocabulary only, never the underlying
   // vendorName/catalog/hitlThreshold extraction contract above/below it.
-  const systemPrompt = templateOverlay ? `${SYSTEM_PROMPT}\n\n${templateOverlay}\n\n${knownSummary}` : `${SYSTEM_PROMPT}\n\n${knownSummary}`
+  const systemPrompt = [SYSTEM_PROMPT, templateOverlay, preferencesBlock, knownSummary].filter(Boolean).join('\n\n')
 
   const client = getAnthropicClient()
   const workingMessages = buildMessages(transcript, userMessage)

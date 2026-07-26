@@ -42,3 +42,8 @@ blob-report/
 
 # Runtime data (published_apps.json — Plan C's file-backed publish store)
 data/
+
+# Local execution logs & session payloads
+.codex/audits/
+.codex/demos/
+.codex/sessions/

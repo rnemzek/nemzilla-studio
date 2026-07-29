@@ -96,6 +96,10 @@ export function createAuditStore(): AuditStore {
 
       if (lastHash !== null && block.prevHash !== lastHash) {
         broken = true
+        console.warn(
+          `Ledger integrity break at index ${block.index}: prevHash link mismatch — expected prevHash ${lastHash}, got ${block.prevHash}`,
+          { expectedPrevHash: lastHash, actualPrevHash: block.prevHash, block },
+        )
         setState('chainStatus', 'broken')
         return
       }
@@ -103,6 +107,10 @@ export function createAuditStore(): AuditStore {
       const recomputed = await sha256Hex(block.prevHash + block.timestamp + JSON.stringify(block.payload))
       if (recomputed !== block.hash) {
         broken = true
+        console.warn(
+          `Ledger integrity break at index ${block.index}: hash mismatch — expected ${recomputed}, got ${block.hash}`,
+          { expectedHash: recomputed, actualHash: block.hash, block },
+        )
         setState('chainStatus', 'broken')
         return
       }

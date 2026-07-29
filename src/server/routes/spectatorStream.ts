@@ -17,7 +17,13 @@ export function spectatorStreamHandler(c: Context) {
   }
 
   const sessionId = crypto.randomUUID()
-  emitPipelineEvent({ name: 'spectator_connected', sessionId, audit: { payload: {} } })
+  // Was `payload: {}` — the only empty audit payload anywhere in this
+  // codebase. Still hash-chained correctly either way (JSON.stringify({})
+  // is a well-defined input to the hash), but an always-empty payload
+  // contributes no content-specific tamper-evidence of its own. `role`
+  // matches the field the sibling `stream_connected` event (agentStream.ts)
+  // already carries for the builder-role connection.
+  emitPipelineEvent({ name: 'spectator_connected', sessionId, audit: { payload: { role: 'spectator' } } })
 
   return serveSessionStream(c, 'spectator', sessionId)
 }

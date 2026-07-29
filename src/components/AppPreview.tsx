@@ -135,7 +135,7 @@ export default function AppPreview() {
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-1.5 text-[11px]">
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-text-muted">
-            Domain: <span class="font-medium text-text">{activeTemplate().name}</span>
+            Domain: <span class="font-medium text-text">{sandbox.state.domainLabel ?? activeTemplate().name}</span>
           </span>
           <div class="flex items-center overflow-hidden rounded border border-border">
             <button

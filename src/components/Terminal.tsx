@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onMount } from 'soli
 import { createStore, produce } from 'solid-js/store'
 import { runCommand, SLASH_COMMANDS, type OutputKind, type SlashCommandInfo } from '../lib/terminalCommands.ts'
 import { interviewState } from '../lib/interviewStore.ts'
+import { sandboxStore } from '../lib/sandboxStore.ts'
 import { visitorState } from '../lib/visitorStore.ts'
 import RnAvatar from './RnAvatar.tsx'
 import PanelHelpButton from './PanelHelpButton.tsx'
@@ -117,8 +118,27 @@ export default function Terminal() {
     await runValue(value)
   }
 
+  /**
+   * UAT fix: the CTA used to stay gated only on `interviewState.interview.done`,
+   * which — per poInterviewLLM.ts's system prompt — is set once and "kept
+   * true afterward." That meant "Ready to build your app? Click Build" never
+   * went away even after the swarm build actually finished, inviting a
+   * confusing re-click. `buildLaunched` tracks whether *this* interview's own
+   * CTA click has fired, independent of `sandboxStore.state.status` (a
+   * shared singleton also driven by the boot-demo/Cookbook, so `status ===
+   * 'ready'` alone can't distinguish "this interview's build" from "whatever
+   * build happened to be showing already").
+   */
+  const [buildLaunched, setBuildLaunched] = createSignal(false)
+  createEffect(() => {
+    if (!interviewState.interview?.done) setBuildLaunched(false)
+  })
+
   /** Pass A: the "Build" CTA below the prompt — fires the same launch path as typing "build"/"andiamo" once the AI PO interview is done. */
-  const triggerBuildCta = () => runValue('/andiamo')
+  const triggerBuildCta = () => {
+    setBuildLaunched(true)
+    return runValue('/andiamo')
+  }
 
   function selectPaletteCommand(cmd: SlashCommandInfo) {
     setInput(`/${cmd.name} `)
@@ -309,17 +329,32 @@ export default function Terminal() {
 
         <Show when={interviewState.interview?.done}>
           <div class="border-t border-border px-4 py-2">
-            <button
-              type="button"
-              disabled={isRunning()}
-              class="w-full rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-accent/90 disabled:opacity-50"
-              onClick={(event) => {
-                event.stopPropagation()
-                void triggerBuildCta()
-              }}
+            <Show
+              when={buildLaunched() && sandboxStore.state.status !== 'error'}
+              fallback={
+                <button
+                  type="button"
+                  disabled={isRunning()}
+                  class="w-full rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-accent/90 disabled:opacity-50"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void triggerBuildCta()
+                  }}
+                >
+                  Ready to build your app? Click Build
+                </button>
+              }
             >
-              Ready to build your app? Click Build
-            </button>
+              <div
+                class={`w-full rounded-md border px-3 py-1.5 text-center text-xs font-semibold ${
+                  sandboxStore.state.status === 'ready'
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                    : 'border-accent/40 bg-accent/10 text-accent'
+                }`}
+              >
+                {sandboxStore.state.status === 'ready' ? '🎉 Build Complete — Preview Updated' : '⚙️ Building your app…'}
+              </div>
+            </Show>
           </div>
         </Show>
 

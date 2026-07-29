@@ -12,6 +12,17 @@ export interface SandboxState {
   status: PreviewStatus
   tab: PreviewTab
   errorMessage: string | null
+  /**
+   * UAT fix: App Preview's "Domain: X" badge used to always read
+   * `activeTemplate().name` (templateStore.ts) — accurate for a template
+   * preview, but a custom PO-interview-driven `andiamo` build has nothing to
+   * do with whatever template was last selected (often just the unrelated
+   * default), so the badge stayed stuck showing e.g. "Order Entry (B2B)"
+   * over a completely different, custom-built app. `null` means "no
+   * override, fall back to the active template's name" — the exact
+   * pre-existing behavior for template previews/boot-demo/Cookbook.
+   */
+  domainLabel: string | null
 }
 
 export interface SandboxStore {
@@ -39,7 +50,7 @@ export interface SandboxStore {
    * the same store off the exact same `generated_app_payload` event shape
    * the swarm pipeline's Lead Dev stage emits. Returns a disconnector.
    */
-  connectSwarmGenerator: (swarmSessionId: string) => () => void
+  connectSwarmGenerator: (swarmSessionId: string, domainLabel?: string | null) => () => void
 }
 
 function parseFrame(chunk: string): { event: string; data: Record<string, unknown> } {
@@ -77,6 +88,7 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
     status: 'idle',
     tab: 'preview',
     errorMessage: null,
+    domainLabel: null,
   })
 
   let frame: HTMLIFrameElement | null = null
@@ -94,8 +106,23 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
     setState('tab', tab)
   }
 
-  function setCode(code: string) {
-    setState({ code, status: code ? 'building' : 'idle', errorMessage: null })
+  /**
+   * `resetDomainLabel` defaults to true for external callers (Cookbook/Run
+   * History "instant replay" bypass connectGenerator/connectSwarmGenerator
+   * entirely, so resetting here means a previous custom build's vendor name
+   * can't linger stale over a newly loaded, unrelated app). connectToStream
+   * below calls this internally to push each SSE chunk/final payload — that
+   * path already set the correct domainLabel itself moments earlier via its
+   * own initial setState, so it passes `false` to avoid immediately
+   * clobbering its own value on the very next code update.
+   */
+  function setCode(code: string, resetDomainLabel = true) {
+    setState({
+      code,
+      status: code ? 'building' : 'idle',
+      errorMessage: null,
+      ...(resetDomainLabel ? { domainLabel: null } : {}),
+    })
     if (!frame) return
     frameReady = false
     frame.src = `${SANDBOX_FRAME_PATH}?t=${Date.now()}`
@@ -106,11 +133,11 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
     setState('status', 'building')
   }
 
-  /** Shared by connectGenerator/connectSwarmGenerator — only the query string differs. */
-  function connectToStream(url: string): () => void {
+  /** Shared by connectGenerator/connectSwarmGenerator — the query string and domainLabel differ. */
+  function connectToStream(url: string, domainLabel: string | null): () => void {
     const controller = new AbortController()
     let releaseRole: (() => void) | null = null
-    setState({ code: '', status: 'building', errorMessage: null })
+    setState({ code: '', status: 'building', errorMessage: null, domainLabel })
 
     ;(async () => {
       try {
@@ -141,7 +168,7 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
               releaseRole = reportRole(data.role === 'builder' ? 'builder' : 'spectator')
             } else if (event === 'generated_app_payload') {
               const code = typeof data.code === 'string' ? data.code : ''
-              if (data.done) setCode(code)
+              if (data.done) setCode(code, false)
               else appendCodeChunk(code)
             }
 
@@ -167,12 +194,14 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
   }
 
   function connectGenerator(prompt: string): () => void {
-    return connectToStream(`${window.location.origin}/api/agent/stream?prompt=${encodeURIComponent(prompt)}${visitorQuery()}`)
+    return connectToStream(`${window.location.origin}/api/agent/stream?prompt=${encodeURIComponent(prompt)}${visitorQuery()}`, null)
   }
 
-  function connectSwarmGenerator(swarmSessionId: string): () => void {
+  /** `domainLabel` is the completed interview's own vendorName (e.g. "Bramble & Co") — see terminalCommands.ts's runAndiamo(). Falls back to a generic label if the interview somehow never captured one. */
+  function connectSwarmGenerator(swarmSessionId: string, domainLabel?: string | null): () => void {
     return connectToStream(
       `${window.location.origin}/api/agent/stream?swarmSessionId=${encodeURIComponent(swarmSessionId)}${visitorQuery()}`,
+      domainLabel ?? 'Custom Swarm App',
     )
   }
 

@@ -302,7 +302,7 @@ async function runAndiamo(ctx: CommandContext): Promise<void> {
   // Swarm Canvas (a pure spectator) picks up the same broadcast telemetry
   // independently. If a build is already active server-wide, this becomes a
   // spectator of it instead of a competing build (see sessionManager.ts).
-  sandboxStore.connectSwarmGenerator(activeInterview.sessionId)
+  sandboxStore.connectSwarmGenerator(activeInterview.sessionId, activeInterview.vendorName)
 }
 
 function runLaunch(ctx: CommandContext, target?: string) {

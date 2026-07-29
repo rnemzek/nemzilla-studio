@@ -278,6 +278,8 @@ export default function Terminal() {
           ref={scrollRef}
           class={`overflow-y-auto px-4 py-3 transition-[max-height] duration-200 ${expanded() ? 'max-h-[36rem]' : 'max-h-80'}`}
         >
+          <p class="font-semibold text-text">AgentZ — Swarm Orchestrator</p>
+          <p class="mb-2 text-[11px] text-text-muted">Directing Planner, Architect, Lead Dev, and Reviewer</p>
           <p class="whitespace-pre-wrap text-accent">
             Welcome, {visitorState.identity?.handle ?? 'friend'}! What would you like to build today?
           </p>

@@ -1,46 +1,29 @@
 import { createSignal } from 'solid-js'
 
 /**
- * UAT fix: the guided "how it works" drawer's open/closed state — shared
- * between `EcosystemNav.tsx` (the ℹ️ header toggle button) and
- * `GuidedWorkflowBanner.tsx` (the drawer itself, now rendered outside the
- * header entirely), same pattern as `adminDrawerStore.ts`'s toggle-button-
- * in-nav/drawer-elsewhere shape. `localStorage` key/value spelled exactly as
- * specified (`agentz_guide_dismissed` / `'true'`), not this project's usual
- * `nemzilla-studio:` prefix convention — an explicit, deliberate rename.
+ * The guided "how it works" modal's open/closed state — shared between
+ * `EcosystemNav.tsx` (the ℹ️ header toggle button) and
+ * `GuidedWorkflowBanner.tsx` (the modal itself).
+ *
+ * UAT fix: this used to default open on first visit, persisting dismissal to
+ * `localStorage` so it wouldn't nag a returning visitor. Now that
+ * `GuidedWorkflowBanner.tsx` is a `fixed inset-0` blocking modal (previously
+ * an inline drawer), that default-open would race ExecutiveShowcaseModal.tsx
+ * — which already opens on first visit — and two full-screen overlays both
+ * defaulting open silently stack (only the later one in DOM order is even
+ * visible). This modal now only ever opens from an explicit "How it Works"
+ * click, so there's nothing to persist across visits — the localStorage
+ * read/write this file used to do is gone, not just unused.
  */
-const STORAGE_KEY = 'agentz_guide_dismissed'
-
-function loadDismissed(): boolean {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === 'true'
-  } catch {
-    return false
-  }
-}
-
-function persistDismissed(dismissed: boolean): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, dismissed ? 'true' : 'false')
-  } catch {
-    // best-effort — a failed write just means the drawer re-shows next visit
-  }
-}
-
-const [guideOpen, setGuideOpenSignal] = createSignal(!loadDismissed())
+const [guideOpen, setGuideOpenSignal] = createSignal(false)
 
 export { guideOpen }
 
 export function toggleGuide(): void {
-  setGuideOpenSignal((current) => {
-    const next = !current
-    persistDismissed(!next)
-    return next
-  })
+  setGuideOpenSignal((current) => !current)
 }
 
-/** The prominent "✕ Dismiss" button inside the drawer — sets the dismissed flag explicitly, distinct from toggleGuide()'s open<->closed flip (dismissing should never re-open on its own). */
+/** The modal's "✕ Dismiss" button and backdrop click. */
 export function dismissGuide(): void {
   setGuideOpenSignal(false)
-  persistDismissed(true)
 }

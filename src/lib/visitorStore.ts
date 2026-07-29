@@ -1,6 +1,6 @@
 /**
  * Pass C Task 1: assigns every browser a persistent, fun default persona
- * ("Karena-Architect-402") the first time it visits, editable afterward, and
+ * ("Turing-Architect-402") the first time it visits, editable afterward, and
  * a lightweight `visitorId` correlating that browser's activity across
  * requests (interview turns, swarm builds, feedback) for the Admin Usage &
  * Session Drawer — see visitorTracker.ts server-side.
@@ -24,9 +24,11 @@ const STORAGE_KEY = 'nemzilla-studio:visitor'
 const HEARTBEAT_MS = 30_000
 const MAX_HANDLE_LENGTH = 60
 
+// AI Pioneer Session Naming Engine — every visitor is assigned the name of a
+// CS/AI pioneer instead of a generic first name.
 const FIRST_NAMES = [
-  'Karena', 'Roberto', 'Amara', 'Dashiell', 'Lucia', 'Kenji', 'Priya', 'Otto',
-  'Sana', 'Micah', 'Yara', 'Felix', 'Nadia', 'Theo', 'Wren', 'Ines',
+  'Turing', 'Lovelace', 'Hopper', 'Shannon', 'McCarthy', 'Minsky',
+  'Hinton', 'Bengio', 'LeCun', 'Norvig', 'Fei-Fei', 'Sutskever',
 ]
 const ROLES = ['Architect', 'PO', 'Reviewer', 'Analyst', 'Builder', 'Scout', 'Planner', 'Auditor']
 

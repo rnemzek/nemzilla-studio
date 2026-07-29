@@ -123,10 +123,14 @@ export default function ArtifactsPanel() {
       <Show when={replayState.run}>
         {(run) => (
           <div class="flex items-center justify-between gap-2 border-b border-border bg-accent/10 px-3 py-1.5 text-[11px] text-accent">
-            <span>
+            <span class="min-w-0 flex-1 truncate">
               ▶ Replaying: <span class="font-medium">{run().name}</span> — see the Swarm panel for the packet trajectory.
             </span>
-            <button type="button" class="rounded border border-accent/40 px-2 py-0.5 hover:bg-accent/10" onClick={() => stopReplay()}>
+            <button
+              type="button"
+              class="shrink-0 rounded border border-accent/40 px-2 py-0.5 hover:bg-accent/10"
+              onClick={() => stopReplay()}
+            >
               Exit Replay
             </button>
           </div>
@@ -136,10 +140,14 @@ export default function ArtifactsPanel() {
       <Show when={viewedRun()}>
         {(run) => (
           <div class="flex items-center justify-between gap-2 border-b border-border bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-300">
-            <span>
+            <span class="min-w-0 flex-1 truncate">
               Viewing saved run: <span class="font-medium">{run().name}</span> ({new Date(run().createdAt).toLocaleString()})
             </span>
-            <button type="button" class="rounded border border-amber-400/40 px-2 py-0.5 hover:bg-amber-400/10" onClick={() => setViewedRun(null)}>
+            <button
+              type="button"
+              class="shrink-0 rounded border border-amber-400/40 px-2 py-0.5 hover:bg-amber-400/10"
+              onClick={() => setViewedRun(null)}
+            >
               Back to Live
             </button>
           </div>

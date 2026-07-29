@@ -12,7 +12,7 @@ interface EcosystemModule {
 const MODULES: EcosystemModule[] = [
   {
     id: 'studio',
-    label: 'NemZilla Studio',
+    label: 'AgentZ Studio',
     description: 'AI agent command & control platform.',
     icon: '🤖',
     href: '/',

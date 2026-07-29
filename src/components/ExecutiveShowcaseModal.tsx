@@ -1,9 +1,6 @@
 import { For, Show } from 'solid-js'
 import { showcaseOpen, dismissExecutiveShowcase } from '../lib/executiveShowcaseStore.ts'
 
-/** Robert's own portfolio/resume site — the same destination `/launch robert` already opens (see terminalCommands.ts's LAUNCH_TARGETS), reused here rather than a new URL. */
-const RESUME_URL = 'https://robert.nemzilla.net'
-
 const VALUE_PROPS: Array<{ icon: string; title: string; body: string }> = [
   {
     icon: '⚡',
@@ -52,7 +49,7 @@ export default function ExecutiveShowcaseModal() {
             </button>
           </div>
           <h1 class="mt-3 text-2xl leading-snug font-bold text-text sm:text-3xl">
-            NemZilla Studio: Conversational AI-Native Micro-App Platform
+            AgentZ Studio: Conversational AI-Native Micro-App Platform
           </h1>
           <ul class="mt-5 space-y-4">
             <For each={VALUE_PROPS}>
@@ -69,22 +66,14 @@ export default function ExecutiveShowcaseModal() {
               )}
             </For>
           </ul>
-          <div class="mt-6 flex flex-col gap-2 sm:flex-row">
+          <div class="mt-6">
             <button
               type="button"
-              class="flex-1 rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-accent/90"
+              class="w-full rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-accent/90"
               onClick={() => dismissExecutiveShowcase()}
             >
               🚀 Launch Live Workspace
             </button>
-            <a
-              href={RESUME_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="flex-1 rounded-md border border-border px-4 py-2.5 text-center text-sm font-medium text-text transition-colors hover:border-accent hover:text-accent"
-            >
-              📄 View Resume / Architecture Spec
-            </a>
           </div>
         </div>
       </div>

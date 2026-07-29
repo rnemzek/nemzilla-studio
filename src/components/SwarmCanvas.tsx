@@ -348,7 +348,7 @@ export default function SwarmCanvas() {
 
   return (
     <FloatingShell id={FLOAT_ID} title="Swarm Canvas" defaultWidth={520}>
-    <section data-testid="swarm-canvas" class="w-full max-w-2xl rounded-lg border border-border bg-surface p-4 shadow-lg">
+    <section data-testid="swarm-canvas" class="w-full max-w-7xl rounded-lg border border-border bg-surface p-4 shadow-lg">
       <div class="mb-2 flex items-center justify-between gap-2">
         <h2 class="text-left text-xs uppercase tracking-wide text-text-muted">Swarm</h2>
         <div class="flex items-center gap-2">
@@ -434,7 +434,7 @@ export default function SwarmCanvas() {
 
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        class="h-auto w-full"
+        class="h-72 w-full"
         role="img"
         aria-label="Multi-agent swarm pipeline, updates live as agents execute"
       >

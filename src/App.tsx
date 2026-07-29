@@ -24,7 +24,7 @@ function App() {
       <GuidedWorkflowBanner />
       <main class="radial-glow flex flex-1 flex-col items-center gap-6 px-6 py-6 text-center sm:py-8">
         <div>
-          <h1 class="text-4xl text-text">NemZilla Studio</h1>
+          <h1 class="text-4xl text-text">AgentZ Studio</h1>
           <p class="max-w-md text-text-muted">
             AI Command &amp; Control Platform — scaffolding online.
           </p>

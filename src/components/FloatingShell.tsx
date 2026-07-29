@@ -144,7 +144,7 @@ export default function FloatingShell(props: FloatingShellProps) {
   }
 
   return (
-    <div class="relative">
+    <div class="relative w-full">
       <Show when={isFloating(props.id)}>
         <div
           ref={placeholderRef}

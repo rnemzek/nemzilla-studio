@@ -5,6 +5,7 @@ const STEPS = [
   { icon: '💬', text: 'Tell AgentZ what to build, in plain English, in the box below.' },
   { icon: '🐝', text: 'Watch the Swarm Canvas above animate every agent as it plans, builds, and reviews.' },
   { icon: '📱', text: 'See your generated app come alive in App Preview, ready to click through.' },
+  { icon: '🚀', text: "Click 'Publish Live App' to generate a QR code and run your app live on your mobile device." },
 ]
 
 /** The onboarding CTA — scrolls to and focuses AgentZ's own prompt box. Plain DOM query rather than a store: a one-shot action with nothing ongoing to keep in sync. `preventScroll` stops the browser's own focus-jump from fighting the smooth scroll that follows it. */

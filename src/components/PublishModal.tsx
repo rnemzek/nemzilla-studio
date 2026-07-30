@@ -67,6 +67,10 @@ export default function PublishModal() {
         type="button"
         disabled={sandboxStore.state.status !== 'ready' || publishing()}
         class="whitespace-nowrap rounded-md border border-border bg-surface-raised px-2 py-1 text-xs text-text-muted transition-colors hover:border-accent hover:text-text disabled:opacity-50"
+        classList={{
+          'border border-blue-400 text-text shadow-[0_0_15px_rgba(59,130,246,0.5)] animate-pulse':
+            sandboxStore.state.status === 'ready' && !publishing() && !isOpen(),
+        }}
         onClick={() => void handlePublish()}
       >
         {publishing() ? 'Publishing…' : '🚀 Publish Live App'}

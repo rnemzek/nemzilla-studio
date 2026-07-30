@@ -82,13 +82,50 @@ function parseFrame(chunk: string): { event: string; data: Record<string, unknow
  * document's event listeners, so the shim wouldn't be able to hear a second
  * `code` message without first re-registering via a real reload.
  */
+const SANDBOX_CODE_STORAGE_KEY = 'nemzilla-studio:sandbox-code'
+
+interface StoredSandboxCode {
+  code: string
+  domainLabel: string | null
+}
+
+/**
+ * UAT fix: AppPreview.tsx's onMount used to unconditionally kick off the
+ * default ACME Order build, discarding whatever custom PO-interview/swarm
+ * app was on screen the moment a visitor hit refresh. sessionStorage (not
+ * localStorage, unlike ITINERARY_STORAGE_KEY below) deliberately scopes this
+ * to "this tab, until closed" — a fresh tab shouldn't resurrect a stranger's
+ * half-finished custom build, but hitting refresh on the same tab should
+ * land back where you were.
+ */
+function loadStoredSandboxCode(): StoredSandboxCode | null {
+  try {
+    const raw = sessionStorage.getItem(SANDBOX_CODE_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<StoredSandboxCode>
+    if (typeof parsed.code !== 'string' || !parsed.code) return null
+    return { code: parsed.code, domainLabel: typeof parsed.domainLabel === 'string' ? parsed.domainLabel : null }
+  } catch {
+    return null
+  }
+}
+
+function persistSandboxCode(code: string, domainLabel: string | null): void {
+  try {
+    sessionStorage.setItem(SANDBOX_CODE_STORAGE_KEY, JSON.stringify({ code, domainLabel } satisfies StoredSandboxCode))
+  } catch (err) {
+    console.error('sandboxStore: failed to persist sandbox code', err)
+  }
+}
+
 export function createSandboxStore(initialCode = ''): SandboxStore {
+  const restored = loadStoredSandboxCode()
   const [state, setState] = createStore<SandboxState>({
-    code: initialCode,
-    status: 'idle',
+    code: restored?.code ?? initialCode,
+    status: restored ? 'ready' : 'idle',
     tab: 'preview',
     errorMessage: null,
-    domainLabel: null,
+    domainLabel: restored?.domainLabel ?? null,
   })
 
   let frame: HTMLIFrameElement | null = null
@@ -262,6 +299,7 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
       case SANDBOX_MESSAGE.rendered:
         setState({ status: 'ready', errorMessage: null })
         restoreItineraryState()
+        persistSandboxCode(state.code, state.domainLabel)
         break
       case SANDBOX_MESSAGE.error:
         setState({ status: 'error', errorMessage: data.message ?? 'Unknown runtime error' })

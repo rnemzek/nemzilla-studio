@@ -352,7 +352,16 @@ export default function Terminal() {
                     : 'border-accent/40 bg-accent/10 text-accent'
                 }`}
               >
-                {sandboxStore.state.status === 'ready' ? '🎉 Build Complete — Preview Updated' : '⚙️ Building your app…'}
+                {sandboxStore.state.status === 'ready' ? (
+                  <>
+                    🎉 Build Complete — Preview Updated
+                    <div class="mt-1 font-normal text-emerald-300/80">
+                      💡 Tip: Click 'Publish Live App' above, scan the QR code, and test this on your phone!
+                    </div>
+                  </>
+                ) : (
+                  '⚙️ Building your app…'
+                )}
               </div>
             </Show>
           </div>

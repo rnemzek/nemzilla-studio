@@ -40,8 +40,17 @@ export default function AppPreview() {
     const detach = sandbox.attachFrame(frameRef)
     onCleanup(detach)
 
-    const disconnect = sandbox.connectGenerator(DEFAULT_PROMPT)
-    onCleanup(disconnect)
+    // UAT fix: sandboxStore seeds `state.code` from sessionStorage on
+    // creation when a prior build in this tab already rendered successfully
+    // (see sandboxStore.ts) — launching the default demo on top of that
+    // would discard it the instant a visitor refreshes mid-custom-build.
+    // attachFrame()'s own ready/send handshake already delivers whatever
+    // code is already in the store, restored or not, so skipping the
+    // default launch here is enough; nothing else needs to push it.
+    if (!sandbox.state.code) {
+      const disconnect = sandbox.connectGenerator(DEFAULT_PROMPT)
+      onCleanup(disconnect)
+    }
   })
 
   /**
@@ -63,6 +72,16 @@ export default function AppPreview() {
   function previewActiveDomain() {
     const template = activeTemplate()
     if (!template.previewScenario) return
+    // domainLabel is only ever non-null for a custom PO-interview/swarm
+    // build (see sandboxStore.ts) — a plain template preview never sets it.
+    // So its presence is exactly "there's custom work here that resetting
+    // would discard," worth a confirm before nuking it.
+    if (
+      sandbox.state.domainLabel &&
+      !window.confirm("This will discard your current custom app and load this domain's default preset. Continue?")
+    ) {
+      return
+    }
     // Fire-and-forget, matching CookbookDropdown.tsx's established pattern
     // for a one-shot triggered build — the SSE connection closes itself
     // when the stream ends, so there's nothing to track/clean up here.
@@ -100,7 +119,7 @@ export default function AppPreview() {
           </p>
           <p class="mt-1.5">
             Once a build is ready, publish it as a real shareable link with "🚀 Publish Live App", or
-            use "🎯 Preview this domain" to see the active template's own demo.
+            use "Reset Domain Preset" to discard it and see the active template's own demo instead.
           </p>
         </PanelHelpButton>
       </div>
@@ -162,10 +181,10 @@ export default function AppPreview() {
         >
           <button
             type="button"
-            class="rounded border border-accent/40 px-2 py-0.5 text-accent transition-colors hover:bg-accent/10"
+            class="text-text-muted underline-offset-2 transition-colors hover:text-text hover:underline"
             onClick={previewActiveDomain}
           >
-            🎯 Preview this domain
+            Reset Domain Preset
           </button>
         </Show>
       </div>

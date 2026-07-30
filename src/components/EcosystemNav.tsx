@@ -23,8 +23,14 @@ function EcosystemNav() {
   return (
     <header class="sticky top-0 z-20 flex w-full flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3 sm:px-6">
       <div class="flex items-center gap-2">
-        <img src="/agentz-logo.png" alt="AgentZ Studio" class="h-6 w-6 shrink-0 rounded-md object-cover" />
-        <span class="font-mono text-sm tracking-wide text-text">AgentZ Studio</span>
+        {/* Plain <a href="/">, not a click handler — a real navigation is the simplest
+            possible "reset to home" in a single-route SPA with no client-side router:
+            the browser reloads the app fresh, discarding whatever session/preview
+            state had accumulated, same as a manual refresh. */}
+        <a href="/" title="AgentZ Studio — Home" class="flex items-center gap-2 transition-opacity hover:opacity-80">
+          <img src="/agentz-logo.svg" alt="AgentZ Studio" class="h-6 w-6 shrink-0" />
+          <span class="font-mono text-sm tracking-wide text-text">AgentZ Studio</span>
+        </a>
         <CommandCenterDrawer />
         <a
           href="https://robert.nemzilla.net"
@@ -33,7 +39,7 @@ function EcosystemNav() {
           title="Built by Robert Nemzek"
           class="ml-1 shrink-0 opacity-60 transition-opacity hover:opacity-100"
         >
-          <img src="/rn-logo.png" alt="Robert Nemzek" class="h-5 w-5 rounded-full object-cover" />
+          <img src="/rn-logo.svg" alt="Robert Nemzek" class="h-5 w-5 rounded-full object-cover" />
         </a>
       </div>
       <nav aria-label="Studio controls" class="flex flex-wrap items-center gap-2">

@@ -18,7 +18,7 @@ const MODULES: EcosystemModule[] = [
     label: 'AgentZ Studio',
     description: 'AI swarm orchestration & micro-app generator.',
     icon: '🤖',
-    iconSrc: '/agentz-logo.png',
+    iconSrc: '/agentz-logo.svg',
     href: '/',
     current: true,
   },
@@ -27,7 +27,7 @@ const MODULES: EcosystemModule[] = [
     label: 'Robert Nemzek',
     description: 'Principal software architecture & portfolio.',
     icon: '👤',
-    iconSrc: '/rn-logo.png',
+    iconSrc: '/rn-logo.svg',
     href: 'https://robert.nemzilla.net',
   },
   {
@@ -35,6 +35,7 @@ const MODULES: EcosystemModule[] = [
     label: 'StreamZilla',
     description: 'Live streaming & media hub.',
     icon: '🎬',
+    iconSrc: '/streamzilla-logo.svg',
     href: 'https://streaming.nemzilla.net',
   },
   {
@@ -42,6 +43,7 @@ const MODULES: EcosystemModule[] = [
     label: 'GridZilla',
     description: 'Grid compute & infrastructure dashboard.',
     icon: '⚡',
+    iconSrc: '/gridzilla-logo.svg',
     href: 'https://grid.nemzilla.net',
   },
 ]

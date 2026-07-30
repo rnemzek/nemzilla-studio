@@ -41,8 +41,22 @@ const MICRO_STATUS: Record<string, string> = {
   Policy: 'Evaluating governance rules...',
 }
 
+/** Node badge glyph — same "known roles get specific copy, anything else falls back" pattern as ROLE_LABEL/MICRO_STATUS above. */
+const ROLE_GLYPH: Record<string, string> = {
+  Planner: '🧠',
+  Architect: '📐',
+  'Lead Dev': '⚡',
+  Reviewer: '🛡️',
+  PO: '💬',
+  Policy: '⚖️',
+}
+
 function roleFor(agent: string): string {
   return ROLE_LABEL[agent] ?? 'Domain specialist'
+}
+
+function glyphFor(agent: string): string {
+  return ROLE_GLYPH[agent] ?? '🤖'
 }
 
 function microStatusFor(agent: string): string {
@@ -348,7 +362,7 @@ export default function SwarmCanvas() {
 
   return (
     <FloatingShell id={FLOAT_ID} title="Swarm Canvas" defaultWidth={520}>
-    <section data-testid="swarm-canvas" class="w-full max-w-7xl rounded-lg border border-border bg-surface p-4 shadow-lg">
+    <section data-testid="swarm-canvas" class="mx-auto w-full max-w-7xl rounded-lg border border-border bg-surface p-4 shadow-lg">
       <div class="mb-2 flex items-center justify-between gap-2">
         <h2 class="text-left text-xs uppercase tracking-wide text-text-muted">Swarm</h2>
         <div class="flex items-center gap-2">
@@ -581,6 +595,7 @@ export default function SwarmCanvas() {
             return (
               <Show when={pos()}>
                 <RnAvatar
+                  glyph={glyphFor(agent)}
                   x={pos()!.x + badgeOffset() - badgeSize() / 2}
                   y={pos()!.y + badgeOffset() - badgeSize() / 2}
                   width={badgeSize()}

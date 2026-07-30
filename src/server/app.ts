@@ -17,6 +17,7 @@ import { touchVisitorHandler } from './routes/visitor.ts'
 import { listSessionsAdminHandler, getSessionDetailAdminHandler } from './routes/admin.ts'
 import { publishAppHandler } from './routes/publish.ts'
 import { shareAppHandler } from './routes/share.ts'
+import { pingDevHandler } from './routes/ping.ts'
 
 const app = new Hono()
   .use('*', securityHeaders())
@@ -45,6 +46,7 @@ const app = new Hono()
   .get('/api/admin/sessions', (c) => listSessionsAdminHandler(c))
   .get('/api/admin/sessions/:visitorId', (c) => getSessionDetailAdminHandler(c))
   .post('/api/publish', (c) => publishAppHandler(c))
+  .post('/api/ping', (c) => pingDevHandler(c))
   // Path must match SANDBOX_FRAME_PATH in src/lib/sandboxTemplate.ts and the
   // exemption in securityHeaders.ts.
   .get('/sandbox-frame', sandboxFrameHandler)

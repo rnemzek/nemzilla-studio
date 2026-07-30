@@ -2,6 +2,14 @@ import { splitProps, type JSX } from 'solid-js'
 
 interface RnAvatarProps extends JSX.SvgSVGAttributes<SVGSVGElement> {
   size?: number
+  /**
+   * Swarm Canvas node badges pass a role-specific emoji (🧠 Planner, 📐
+   * Architect, ⚡ Lead Dev, 🛡️ Reviewer) here instead of the default "RN"
+   * mark — same glowing gradient badge, just labeled per-role so four nodes
+   * on screen at once don't all repeat the same initials. Every other call
+   * site (header, chat avatar) omits this and keeps the plain "RN" mark.
+   */
+  glyph?: string
 }
 
 let nextGradientId = 0
@@ -34,10 +42,10 @@ let nextGradientId = 0
  * reactive prop.
  */
 export default function RnAvatar(props: RnAvatarProps) {
-  const [local, rest] = splitProps(props, ['size'])
+  const [local, rest] = splitProps(props, ['size', 'glyph'])
   const gradientId = `rn-avatar-gradient-${nextGradientId++}`
   return (
-    <svg viewBox="0 0 64 64" width={local.size ?? 24} height={local.size ?? 24} role="img" aria-label="RN" {...rest}>
+    <svg viewBox="0 0 64 64" width={local.size ?? 24} height={local.size ?? 24} role="img" aria-label={local.glyph ?? 'RN'} {...rest}>
       <defs>
         <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stop-color="#ff4500" />
@@ -46,8 +54,16 @@ export default function RnAvatar(props: RnAvatarProps) {
         </linearGradient>
       </defs>
       <circle cx="32" cy="32" r="30" fill={`url(#${gradientId})`} stroke="#000000" stroke-width="2.5" />
-      <text x="32" y="41" text-anchor="middle" font-family="system-ui, sans-serif" font-size="26" font-weight="800" fill="#000000">
-        RN
+      <text
+        x="32"
+        y={local.glyph ? "40" : "41"}
+        text-anchor="middle"
+        font-family="system-ui, sans-serif"
+        font-size={local.glyph ? "28" : "26"}
+        font-weight="800"
+        fill="#000000"
+      >
+        {local.glyph ?? 'RN'}
       </text>
     </svg>
   )

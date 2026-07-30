@@ -2,9 +2,9 @@ import { Show } from 'solid-js'
 import CommandCenterDrawer from './CommandCenterDrawer.tsx'
 import BibleModal from './BibleModal.tsx'
 import CookbookDropdown from './CookbookDropdown.tsx'
-import RnAvatar from './RnAvatar.tsx'
 import VisitorTag from './VisitorTag.tsx'
 import FeedbackModal from './FeedbackModal.tsx'
+import PingDevModal from './PingDevModal.tsx'
 import { currentRoleBadge } from '../lib/sessionRoleStore.ts'
 import { toggleGuide } from '../lib/guidedBannerStore.ts'
 import { openExecutiveShowcase } from '../lib/executiveShowcaseStore.ts'
@@ -23,11 +23,18 @@ function EcosystemNav() {
   return (
     <header class="sticky top-0 z-20 flex w-full flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3 sm:px-6">
       <div class="flex items-center gap-2">
-        <RnAvatar size={22} class="shrink-0" />
-        <span class="font-mono text-sm tracking-wide text-text">
-          NemZilla<span class="text-accent">.</span>net
-        </span>
+        <img src="/agentz-logo.png" alt="AgentZ Studio" class="h-6 w-6 shrink-0 rounded-md object-cover" />
+        <span class="font-mono text-sm tracking-wide text-text">AgentZ Studio</span>
         <CommandCenterDrawer />
+        <a
+          href="https://robert.nemzilla.net"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Built by Robert Nemzek"
+          class="ml-1 shrink-0 opacity-60 transition-opacity hover:opacity-100"
+        >
+          <img src="/rn-logo.png" alt="Robert Nemzek" class="h-5 w-5 rounded-full object-cover" />
+        </a>
       </div>
       <nav aria-label="Studio controls" class="flex flex-wrap items-center gap-2">
         <button
@@ -45,6 +52,7 @@ function EcosystemNav() {
           <span aria-hidden="true">ℹ️</span> <span class="hidden sm:inline">How it Works</span>
         </button>
         <VisitorTag />
+        <PingDevModal />
         <FeedbackModal />
         <BibleModal />
         <CookbookDropdown />

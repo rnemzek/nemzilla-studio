@@ -4,7 +4,10 @@ interface EcosystemModule {
   id: string
   label: string
   description: string
+  /** Emoji fallback — only used when iconSrc isn't set (StreamZilla/GridZilla still have no dedicated logo asset). */
   icon: string
+  /** Real logo image, when this module has one (studio/robert) — takes priority over `icon`. */
+  iconSrc?: string
   href: string
   current?: boolean
 }
@@ -13,16 +16,18 @@ const MODULES: EcosystemModule[] = [
   {
     id: 'studio',
     label: 'AgentZ Studio',
-    description: 'AI agent command & control platform.',
+    description: 'AI swarm orchestration & micro-app generator.',
     icon: '🤖',
+    iconSrc: '/agentz-logo.png',
     href: '/',
     current: true,
   },
   {
     id: 'robert',
     label: 'Robert Nemzek',
-    description: 'Personal portfolio & engineering profile.',
+    description: 'Principal software architecture & portfolio.',
     icon: '👤',
+    iconSrc: '/rn-logo.png',
     href: 'https://robert.nemzilla.net',
   },
   {
@@ -84,9 +89,13 @@ export default function CommandCenterDrawer() {
                 class="group flex items-start gap-3 rounded-lg border border-border bg-surface-raised p-3 transition-colors hover:border-accent"
                 onClick={() => setIsOpen(false)}
               >
-                <span class="text-2xl" aria-hidden="true">
-                  {mod.icon}
-                </span>
+                <Show when={mod.iconSrc} fallback={
+                  <span class="text-2xl" aria-hidden="true">
+                    {mod.icon}
+                  </span>
+                }>
+                  {(src) => <img src={src()} alt="" aria-hidden="true" class="h-8 w-8 shrink-0 rounded-md object-cover" />}
+                </Show>
                 <div class="flex-1">
                   <div class="flex items-center gap-2">
                     <span class="font-medium text-text transition-colors group-hover:text-accent">{mod.label}</span>

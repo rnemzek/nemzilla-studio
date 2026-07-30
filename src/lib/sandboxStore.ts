@@ -3,6 +3,7 @@ import { SANDBOX_FRAME_PATH, SANDBOX_MESSAGE, buildSandboxDocument } from './san
 import { reportRole } from './sessionRoleStore.ts'
 import { playOrderTrajectory } from './policyTrajectoryStore.ts'
 import { getVisitor } from './visitorStore.ts'
+import { getActiveTemplate } from './templateStore.ts'
 
 export type PreviewStatus = 'idle' | 'building' | 'ready' | 'error'
 export type PreviewTab = 'preview' | 'source' | 'artifacts'
@@ -299,7 +300,15 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
       case SANDBOX_MESSAGE.rendered:
         setState({ status: 'ready', errorMessage: null })
         restoreItineraryState()
-        persistSandboxCode(state.code, state.domainLabel)
+        // domainLabel is only ever non-null for a custom swarm build (see
+        // connectSwarmGenerator below) — a template-preview build leaves it
+        // null and relies on the header badge's own `?? activeTemplate().name`
+        // fallback (AppPreview.tsx). That fallback reads activeTemplateId(),
+        // which intentionally never persists (templateStore.ts) and resets
+        // to the default on reload — so without resolving it here too, a
+        // restored template-preview app would show the wrong badge after a
+        // refresh even though the iframe content itself is correct.
+        persistSandboxCode(state.code, state.domainLabel ?? getActiveTemplate().name)
         break
       case SANDBOX_MESSAGE.error:
         setState({ status: 'error', errorMessage: data.message ?? 'Unknown runtime error' })

@@ -22,6 +22,10 @@ export interface PoTranscriptEntry {
 export interface PoCatalogItem {
   name: string
   price: number
+  /** A stated time for this item/task (e.g. "8:00 AM") — null/omitted when the visitor never gave one. */
+  time?: string | null
+  /** Nested sub-items belonging to this parent (e.g. grocery items under "Get Groceries") — null/omitted when this item has none. */
+  subItems?: string[] | null
 }
 
 export interface PoKnownFields {
@@ -72,7 +76,7 @@ Greeting: on your very first message of a brand-new interview (there is no prior
 
 Whatever the domain, you need exactly three things, in whatever order the visitor offers them — extracted using the vocabulary that actually fits their request:
 1. vendorName — the name of the thing this app is for (a company/vendor for an order-entry app; the day or event's name for an itinerary or dinner plan; whatever a real person would naturally call it).
-2. catalog — a list of items with a cost each (products for order entry; tasks, recipe ingredients, or planned activities for a to-do list, itinerary, or dinner plan — $0 is a fine cost when price genuinely doesn't apply).
+2. catalog — a list of items with a cost each (products for order entry; tasks, recipe ingredients, or planned activities for a to-do list, itinerary, or dinner plan — $0 is a fine cost when price genuinely doesn't apply). Capture a stated time on an item when the visitor gives one (e.g. "Get Groceries at 8am" → time: "8:00 AM"). If an item has its own smaller sub-items (e.g. "Get Groceries" needing dog treats, cheese, and yogurt), nest those under that item's subItems rather than listing them as separate top-level catalog entries.
 3. hitlThreshold — a dollar amount above which this needs a second look/approval (a supervisor sign-off threshold for orders; a budget line for errands, groceries, or tickets for anything else).
 
 Rules:
@@ -102,8 +106,17 @@ const RESPONSE_SCHEMA = {
       type: ['array', 'null'],
       items: {
         type: 'object',
-        properties: { name: { type: 'string' }, price: { type: 'number' } },
-        required: ['name', 'price'],
+        properties: {
+          name: { type: 'string' },
+          price: { type: 'number' },
+          time: { type: ['string', 'null'], description: 'A stated time for this item, e.g. "8:00 AM" — null if none was mentioned.' },
+          subItems: {
+            type: ['array', 'null'],
+            items: { type: 'string' },
+            description: 'Nested sub-items belonging to this parent item (e.g. grocery items under "Get Groceries") — null if this item has none.',
+          },
+        },
+        required: ['name', 'price', 'time', 'subItems'],
         additionalProperties: false,
       },
     },
@@ -131,16 +144,18 @@ function isPoTurnResult(v: unknown): v is PoTurnResult {
   if (d.learnedRule !== undefined && d.learnedRule !== null && typeof d.learnedRule !== 'string') return false
   if (d.catalog !== null) {
     if (!Array.isArray(d.catalog)) return false
-    if (
-      !d.catalog.every(
-        (item) =>
-          item !== null &&
-          typeof item === 'object' &&
-          typeof (item as Record<string, unknown>).name === 'string' &&
-          typeof (item as Record<string, unknown>).price === 'number',
-      )
-    )
-      return false
+    if (!d.catalog.every(isPoCatalogItem)) return false
+  }
+  return true
+}
+
+function isPoCatalogItem(item: unknown): boolean {
+  if (item === null || typeof item !== 'object') return false
+  const i = item as Record<string, unknown>
+  if (typeof i.name !== 'string' || typeof i.price !== 'number') return false
+  if (i.time !== undefined && i.time !== null && typeof i.time !== 'string') return false
+  if (i.subItems !== undefined && i.subItems !== null) {
+    if (!Array.isArray(i.subItems) || !i.subItems.every((sub) => typeof sub === 'string')) return false
   }
   return true
 }

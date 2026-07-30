@@ -47,6 +47,10 @@ export type EnrichmentCard =
 export interface PoCatalogItem {
   name: string
   price: number
+  /** A stated time for this item/task (e.g. "8:00 AM") — null/omitted when the visitor never gave one. */
+  time?: string | null
+  /** Nested sub-items belonging to this parent (e.g. grocery items under "Get Groceries") — null/omitted when this item has none. */
+  subItems?: string[] | null
 }
 
 export interface PoInterviewState {

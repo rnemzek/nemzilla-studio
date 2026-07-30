@@ -253,6 +253,19 @@ const DEFAULT_UNIFIED_ITINERARY: UnifiedItineraryPayload = {
       location: 'Jiffy Lube',
     },
     {
+      id: 'errand-groceries',
+      category: 'errand',
+      title: 'Get Groceries',
+      time: '8:00 AM',
+      details: {
+        checklist: [
+          { id: 'grocery-dog-treats', text: 'Dog treats', completed: false },
+          { id: 'grocery-cheese', text: 'Cheese', completed: false },
+          { id: 'grocery-yogurt', text: 'Yogurt', completed: false },
+        ],
+      },
+    },
+    {
       id: 'culinary-pecan-chicken-salad',
       category: 'culinary',
       title: 'Paula Deen Pecan Chicken Salad',
@@ -450,10 +463,20 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
     list.innerHTML = ''
     TASKS.filter(function (t) { return t.category === 'errand' }).forEach(function (t) {
       var li = document.createElement('li')
-      li.className = 'flex items-center gap-2'
       var meta = t.time ? ' <span class="text-slate-500">(' + t.time + (t.location ? ' · ' + t.location : '') + ')</span>' : ''
-      li.innerHTML = '<input type="checkbox" id="' + t.id + '" class="h-4 w-4 rounded border-slate-700 bg-slate-800"' + (t.completed ? ' checked' : '') + ' />' +
-        '<label for="' + t.id + '" class="' + completionLabelClass(t.completed) + '">' + t.title + meta + '</label>'
+      var checklist = (t.details && t.details.checklist) || []
+      var subItems = checklist.length
+        ? '<ul class="mt-1.5 ml-6 space-y-1">' + checklist.map(function (ci) {
+            return '<li class="flex items-center gap-2">' +
+              '<input type="checkbox" id="' + ci.id + '" class="h-3.5 w-3.5 rounded border-slate-700 bg-slate-800"' + (ci.completed ? ' checked' : '') + ' />' +
+              '<label for="' + ci.id + '" class="' + completionLabelClass(ci.completed) + ' text-slate-300">' + ci.text + '</label>' +
+              '</li>'
+          }).join('') + '</ul>'
+        : ''
+      li.innerHTML = '<div class="flex items-center gap-2">' +
+        '<input type="checkbox" id="' + t.id + '" class="h-4 w-4 rounded border-slate-700 bg-slate-800"' + (t.completed ? ' checked' : '') + ' />' +
+        '<label for="' + t.id + '" class="' + completionLabelClass(t.completed) + '">' + t.title + meta + '</label>' +
+        '</div>' + subItems
       list.appendChild(li)
     })
     Array.prototype.forEach.call(list.querySelectorAll('input'), function (input) {

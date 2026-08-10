@@ -1,0 +1,12 @@
+import { chromium } from 'playwright'
+const browser = await chromium.launch()
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+await page.goto('http://127.0.0.1:5301/', { waitUntil: 'load', timeout: 15000 })
+await page.waitForTimeout(800)
+const before = await page.locator('text=EXECUTIVE OVERVIEW').count()
+await page.locator('button:has-text("✕")').first().click()
+await page.waitForTimeout(400)
+const after = await page.locator('text=EXECUTIVE OVERVIEW').count()
+console.log('modal visible before/after:', before, after)
+await page.locator('header').screenshot({ path: '/private/tmp/claude-501/-Users-rnemzek-Projects-personal-nemzilla-studio/10bf17dd-2e5c-47e3-ad48-468bbb8477f7/scratchpad/header-clean-1x.png' })
+await browser.close()

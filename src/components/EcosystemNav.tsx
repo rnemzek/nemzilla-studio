@@ -27,8 +27,10 @@ function EcosystemNav() {
             possible "reset to home" in a single-route SPA with no client-side router:
             the browser reloads the app fresh, discarding whatever session/preview
             state had accumulated, same as a manual refresh. */}
-        <a href="/" title="AgentZ Studio — Home" class="inline-flex items-center gap-2 transition-opacity hover:opacity-80">
-          <img src="/agentz-logo.svg" alt="AgentZ Studio" class="h-6 w-6 shrink-0" />
+        <a href="/" title="AgentZ Studio — Home" class="inline-flex items-center gap-2.5 transition-opacity hover:opacity-80">
+          <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-900/90 ring-1 ring-inset ring-white/10">
+            <img src="/agentz-logo.svg" alt="AgentZ Studio" class="h-6 w-6 object-contain" />
+          </span>
           <span class="font-mono text-sm tracking-wide text-text">AgentZ Studio</span>
         </a>
         <CommandCenterDrawer />
@@ -37,12 +39,12 @@ function EcosystemNav() {
           target="_blank"
           rel="noopener noreferrer"
           title="Built by Robert Nemzek"
-          class="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500/15 opacity-90 ring-1 ring-inset ring-red-500/40 transition-opacity hover:opacity-100"
+          class="mx-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-500/15 opacity-100 ring-2 ring-red-500/80 transition-transform hover:scale-105 hover:ring-red-500"
         >
           <img
             src="/rn-logo.svg"
             alt="Robert Nemzek"
-            class="h-6 w-6 rounded-full object-cover"
+            class="h-8 w-8 rounded-full object-cover"
           />
         </a>
       </div>

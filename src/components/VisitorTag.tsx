@@ -27,15 +27,32 @@ export default function VisitorTag() {
   return (
     <Show when={visitorState.identity}>
       {(identity) => (
-        <span class="flex items-center gap-1 rounded-md border border-border bg-surface-raised px-2 py-1 font-mono text-[11px] text-text-muted">
+        <span class="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-raised px-2 py-1.5 font-mono text-[11px] text-text-muted">
           <span>Observer:</span>
           <Show
             when={editing()}
             fallback={
               <>
                 <span class="text-text">[ {identity().handle} ]</span>
-                <button type="button" class="hover:text-accent" aria-label="Edit observer handle" onClick={startEditing}>
-                  ✏️
+                <button
+                  type="button"
+                  class="inline-flex h-4 w-4 shrink-0 items-center justify-center gap-1.5 text-orange-400 transition-colors hover:text-accent"
+                  aria-label="Edit observer handle"
+                  onClick={startEditing}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    class="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
                 </button>
               </>
             }

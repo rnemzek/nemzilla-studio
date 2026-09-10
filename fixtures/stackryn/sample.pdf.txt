@@ -1,0 +1,5 @@
+ACME CORP — VENDOR SCOPING BRIEF
+Extracted via PDF text layer.
+Auto-approve ceiling requested: $600
+Order threshold ceiling: $500
+Notes: escalate anything above ceiling to HITL review.

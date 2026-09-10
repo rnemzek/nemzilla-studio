@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "projectName": "nemzilla-studio",
+  "stack": [
+    "TypeScript",
+    "SolidJS",
+    "Vite"
+  ],
+  "packageManager": "npm",
+  "detectedAt": "2026-08-11T01:36:56.774Z",
+  "commands": {
+    "build": "npm run build",
+    "test": null,
+    "lint": null,
+    "start": "npm run dev"
+  },
+  "directories": [
+    "src"
+  ],
+  "uow": {
+    "active": null,
+    "history": []
+  },
+  "featureMemory": []
+}

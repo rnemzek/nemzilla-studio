@@ -208,3 +208,50 @@ hand-verified against a live `tsx server.ts`: uploaded a custom
 correctly matched from the content, and a real audit hash; also confirmed an
 unsupported extension (`.exe`) is rejected with 400 before reaching
 governance. `tsc -b` type-checks clean.
+
+## UOW-5.0 — Executive Mobile-First Risk & Effort Charting (2026-09-10)
+
+- `src/components/StackrynReadinessCharts.tsx` (new) — two presentation-only
+  chart components consumed by `StackrynCockpitPanel.tsx`, no new
+  server/store fields (none were in this UOW's file scope):
+  - `SystemReadinessDistribution({ systemsMapped, risks })` — a horizontal
+    CSS stacked-bar (API-Ready / Adapter Needed / EOL Legacy) plus a dot
+    legend with counts. Since `ModernizationDashboardPayload` has no
+    per-system readiness field, each known risk is classified into a bucket
+    by keyword match against its own `title`/`recommendation` text
+    (`webhook|adapter|cdc` -> Adapter Needed, `end-of-life|eol|legacy|
+    mainframe|as400` -> EOL Legacy); anything unmatched (e.g. a SOC2/
+    compliance-only risk) doesn't move a system out of API-Ready. Remaining
+    `systemsMapped` count fills the API-Ready bucket.
+  - `RiskSeverityBreakdown({ risks })` — an SVG donut (stroke-dasharray
+    stacked-segment technique, `viewBox 0 0 36 36`, circumference-100 radius)
+    tallying `risks` by `RiskSeverity`, plus the same dot-legend pattern,
+    with the total risk count in the donut's center.
+- `src/components/StackrynCockpitPanel.tsx` — both charts inserted between
+  the Scope & Metrics header and the existing Automated Risk Matrix, inside
+  the same `Show`/`response()`/`result()` reactive chain the metrics grid
+  already uses, so uploading a file via `FileUploadZone.tsx` (which calls
+  `setStackrynResult()`) re-renders the charts exactly like the rest of the
+  panel — no additional wiring needed.
+- Mobile-first: the distribution bar's legend and the donut's legend both use
+  `flex flex-wrap`, and the donut card stacks to a single column below `sm:`
+  (`flex-col sm:flex-row`); the donut SVG itself is a fixed `h-20 w-20`
+  scaled by `viewBox`, not fixed pixel geometry.
+
+Bug caught and fixed during manual verification (see below): the initial
+adapter-keyword pattern included a bare `real-time`, which also matched the
+Project Horizon SOC2 risk's recommendation text ("...real-time system of
+record...") and misclassified it as "Adapter Needed" (2/1/9 split instead of
+the correct 1/1/10). Narrowed the pattern to `webhook|adapter|\bcdc\b`.
+
+Verification: `npm test` 18/18 (unchanged — this UOW touched no
+server/route/test-covered code). `tsc -b` type-checks clean. Manually
+verified live via a throwaway Playwright driver (spawned `tsx server.ts`,
+dismissed the `ExecutiveShowcaseModal`, clicked "Preset Cookbook" ->
+"Ingest Project Horizon Bundle", screenshotted the Cockpit panel): confirmed
+both `[data-testid="stackryn-readiness-distribution"]` and
+`[data-testid="stackryn-risk-severity-donut"]` render with the corrected
+10 API-Ready / 1 Adapter Needed / 1 EOL Legacy split and 1 CRITICAL / 1 HIGH
+/ 1 MEDIUM donut, at both 1280px and a 375px iPhone-width viewport, with zero
+browser console errors. The throwaway driver script and its screenshots were
+not committed (outside this UOW's file scope).

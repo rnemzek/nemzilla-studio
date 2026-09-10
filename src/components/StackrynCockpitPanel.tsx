@@ -4,6 +4,7 @@ import type { RiskSeverity } from '../lib/stackrynIngestClient.ts'
 import PanelHelpButton from './PanelHelpButton.tsx'
 import FloatingShell from './FloatingShell.tsx'
 import FileUploadZone from './FileUploadZone.tsx'
+import { SystemReadinessDistribution, RiskSeverityBreakdown } from './StackrynReadinessCharts.tsx'
 import { openFloat } from '../lib/floatingWindowStore.ts'
 
 const FLOAT_ID = 'stackryn-cockpit'
@@ -134,6 +135,12 @@ export default function StackrynCockpitPanel() {
                           <p class="font-medium text-text">{result().metrics!.systemsMapped}</p>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Executive Charts: readiness distribution + risk severity, ahead of the detailed matrix/backlog below */}
+                    <div class="space-y-2">
+                      <SystemReadinessDistribution systemsMapped={result().metrics!.systemsMapped} risks={result().risks ?? []} />
+                      <RiskSeverityBreakdown risks={result().risks ?? []} />
                     </div>
 
                     {/* Automated Risk Matrix */}

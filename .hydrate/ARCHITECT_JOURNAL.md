@@ -117,3 +117,37 @@ but AC #3/#4 are impossible to satisfy without a new upload component and
 without the format-parser/client-wrapper changes those criteria require —
 implemented anyway per the acceptance criteria's own explicit text; see Dev
 Journal for the full file list.
+
+## UOW-5.0 — Executive Mobile-First Risk & Effort Charting (2026-09-10)
+
+Established design decision: "System Integration Readiness" (API-Ready /
+Adapter Needed / EOL Legacy) has no backing field anywhere in
+`ModernizationDashboardPayload`/`ModernizationMetrics`, and this UOW's File
+Scope was `src/components/*` only — no server/store changes authorized. The
+distribution shown is therefore a **client-side presentational derivation**,
+not a new domain concept: each risk already on the payload is classified by
+a keyword match against its own `title`/`recommendation` text, and whatever
+`systemsMapped` count isn't accounted for by a matched risk is treated as
+API-Ready. This is an honest approximation, not a precise per-system
+readiness audit — if the Lead Architect wants a real per-system breakdown
+later, that requires a new payload field (e.g. a `systems: Array<{ name,
+readiness }>` on `ModernizationDashboardPayload`) populated server-side by
+`stackrynGovernanceEngine.ts`, at which point `StackrynReadinessCharts.tsx`
+should switch from keyword inference to reading that field directly.
+
+Established abstraction: `StackrynReadinessCharts.tsx` is a standalone
+presentational component pair (`SystemReadinessDistribution`,
+`RiskSeverityBreakdown`) taking only `{ systemsMapped, risks }` — no store
+coupling — so `StackrynCockpitPanel.tsx` stays the only place that reads
+`stackrynDashboardStore`, and the charts stay trivially reusable/testable
+against any `ModernizationRisk[]`.
+
+Architectural wisdom: a keyword-based classifier over free-text risk
+copy is fragile to word choice drift — the SOC2 risk's own recommendation
+text ("real-time system of record") false-matched an initial `real-time`
+adapter-keyword before it was narrowed to `webhook|adapter|\bcdc\b`. Any
+future addition to `stackrynGovernanceEngine.ts`'s risk copy (the
+`RISKS`/`CONTENT_RISK_SIGNALS` constants) should be checked against
+`StackrynReadinessCharts.tsx`'s `ADAPTER_PATTERN`/`EOL_PATTERN` regexes for
+accidental cross-matches, or — better — promoted to the real payload field
+described above so the two can't drift.

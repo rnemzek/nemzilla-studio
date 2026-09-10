@@ -1,8 +1,9 @@
-import { Show, For, createSignal } from 'solid-js'
+import { Show, For, createSignal, createEffect } from 'solid-js'
 import { stackrynDashboardState } from '../lib/stackrynDashboardStore.ts'
 import type { RiskSeverity } from '../lib/stackrynIngestClient.ts'
 import PanelHelpButton from './PanelHelpButton.tsx'
 import FloatingShell from './FloatingShell.tsx'
+import FileUploadZone from './FileUploadZone.tsx'
 import { openFloat } from '../lib/floatingWindowStore.ts'
 
 const FLOAT_ID = 'stackryn-cockpit'
@@ -34,6 +35,16 @@ function shortHash(hash: string): string {
  */
 export default function StackrynCockpitPanel() {
   const [copied, setCopied] = createSignal(false)
+  let sectionRef: HTMLElement | undefined
+
+  // UOW-4.0: focuses the Product Owner's attention on this panel the moment
+  // an ingest pipeline lands a result, instead of leaving them to scroll for
+  // it manually in the Command Center grid.
+  createEffect(() => {
+    if (stackrynDashboardState.latest) {
+      sectionRef?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  })
 
   async function copyLinearPayload() {
     const linearExport = stackrynDashboardState.latest?.result.linearExport
@@ -50,6 +61,7 @@ export default function StackrynCockpitPanel() {
   return (
     <FloatingShell id={FLOAT_ID} title="Stackryn Modernization Cockpit" defaultWidth={480}>
       <section
+        ref={sectionRef}
         data-testid="stackryn-cockpit-panel"
         class="flex w-full max-w-2xl flex-col rounded-lg border border-border bg-surface text-left shadow-lg"
       >
@@ -74,7 +86,8 @@ export default function StackrynCockpitPanel() {
           </div>
         </div>
 
-        <div class="p-4">
+        <div class="space-y-3 p-4">
+          <FileUploadZone />
           <Show
             when={stackrynDashboardState.latest}
             fallback={

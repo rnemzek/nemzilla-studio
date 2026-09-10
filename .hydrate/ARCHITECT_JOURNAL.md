@@ -78,3 +78,42 @@ clipboard button. Implemented the Cockpit as `StackrynCockpitPanel.tsx`, a
 standalone `FloatingShell` panel (same pattern as SwarmCanvas/
 AuditLedgerPanel) instead, satisfying the File Scope's own bracketed
 alternative ("Preview / Dashboard views").
+
+## UOW-4.0 — Stackryn Unified Ingest UX & Dynamic File Upload Integration (2026-09-10)
+
+New contract: `POST /api/stackryn/ingest` now accepts two request shapes —
+the existing `application/json` `{ format, filename, payload }` preset body
+(unchanged), or `multipart/form-data` with a single `file` field, dispatched
+on the request's `content-type` header. For the multipart path, `format` is
+inferred from the uploaded filename's extension (`.pdf`/`.csv`/`.txt`/
+`.json`) rather than caller-declared — a 400 rejects any other extension
+before governance ever runs. `IngestFormat` gained a 4th member, `'json'`
+(array-of-records or single-object payloads).
+
+Established design decision: `evaluateGovernance()` now branches on whether
+the ingested `filename` matches one of the 3 known Project Horizon fixtures.
+That preserves UOW-3.0's contract exactly (same canned dashboard, byte-for-
+byte, for the 3 known artifacts the existing test suite and Preset Cookbook
+bundle exercise) while giving genuinely novel client uploads their own
+honestly-dynamic evaluation path (`clientUploadDashboard()`) — a keyword-
+based risk scan over the parsed content/fields, generic project id/name
+derived from the filename, and metrics/Linear export scaled off the actual
+record/field count instead of echoing the Project Horizon engagement's own
+numbers for unrelated content. This is a narrower, purpose-built alternative
+to the "one aggregate engagement view" model UOW-3.0 established — it only
+kicks in for content that isn't part of that named engagement, so the two
+data sources never contradict each other for the same filename.
+
+Established abstraction: `CookbookDropdown.tsx`'s 3 independent preset
+triggers collapsed into one `launchStackrynBundle()` sequential-ingest loop
+over `STACKRYN_INGEST_PRESETS` — the preset registry itself didn't need to
+change shape, only how the UI iterates and reports over it. Anything added
+to `STACKRYN_INGEST_PRESETS` in the future is automatically included in the
+bundle with no further UI change.
+
+Trade-off: the UOW's spec didn't list `FileUploadZone.tsx`,
+`stackrynFormatParsers.ts`, or `stackrynIngestClient.ts` in its File Scope,
+but AC #3/#4 are impossible to satisfy without a new upload component and
+without the format-parser/client-wrapper changes those criteria require —
+implemented anyway per the acceptance criteria's own explicit text; see Dev
+Journal for the full file list.

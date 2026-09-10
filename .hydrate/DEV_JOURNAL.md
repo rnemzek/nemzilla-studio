@@ -155,3 +155,56 @@ Matrix" from the dropdown, confirmed the dropdown's inline status
 JSON" and read back the clipboard to confirm it's valid JSON matching the
 `LinearExportPayload` shape, and confirmed a real SHA-256 hash on the
 audit-signed tag — zero console errors.
+
+## UOW-4.0 — Stackryn Unified Ingest UX & Dynamic File Upload Integration (2026-09-10)
+
+- `src/components/CookbookDropdown.tsx` — replaced the 3 per-preset "Stackryn:
+  Project Horizon Cockpit" buttons with one "Ingest Project Horizon Bundle"
+  card (PDF RFP / CSV Matrix / TXT Constraints tags). `launchStackrynBundle()`
+  runs `STACKRYN_INGEST_PRESETS` through `triggerStackrynIngest()` in turn,
+  updating the status line per-file and bailing out on the first denial;
+  replaces the old per-preset `launchStackrynIngest()`.
+- `src/components/StackrynCockpitPanel.tsx` — a `createEffect` watching
+  `stackrynDashboardState.latest` calls `sectionRef.scrollIntoView({behavior:
+  'smooth', block: 'nearest'})` whenever a new ingest result lands, and now
+  renders `<FileUploadZone/>` above the dashboard content.
+- `src/components/FileUploadZone.tsx` (new) — drag-and-drop + click-to-browse
+  dropzone for `.pdf`/`.csv`/`.txt`/`.json`; client-side extension check,
+  then `triggerStackrynFileUpload()` + `setStackrynResult()`, matching
+  `CookbookDropdown.tsx`'s own status-line convention.
+- `src/server/services/stackrynFormatParsers.ts` — widened `IngestFormat` to
+  include `'json'`, added `parseJson()` (array-of-records or single object),
+  and `inferFormatFromFilename()` for the upload path (no caller-declared
+  `format` field on a raw file upload, unlike the JSON preset body).
+- `src/server/routes/stackrynIngest.ts` — `readIngestRequest()` branches on
+  `content-type`: `multipart/form-data` goes through `c.req.parseBody()` and
+  `inferFormatFromFilename()` on the uploaded `file` field's name; anything
+  else falls back to the existing `c.req.json()` path unchanged. Same
+  downstream pipeline (PLANNING -> PARSING -> EVALUATING -> DONE, broadcast +
+  audit) for both.
+- `src/server/services/stackrynGovernanceEngine.ts` — `evaluateGovernance()`
+  now branches on whether the ingested `filename` is one of the 3 known
+  Project Horizon fixtures. Known fixtures keep the exact canned dashboard
+  (UOW-3.0 behavior, unchanged). Anything else (a client upload) goes through
+  new `clientUploadDashboard()`: scans the parsed content/fields against 4
+  keyword risk signals (PII, legacy/mainframe, EOL/Oracle, SOC2/compliance —
+  falls back to a single generic "recommend manual review" MEDIUM risk if
+  none match), and derives `projectId`/`projectName`/metrics/Linear export
+  from the upload itself rather than the Project Horizon scenario data.
+- `src/lib/stackrynIngestClient.ts` — widened the `format` union to include
+  `'json'`; factored the shared fetch/response-parsing into
+  `postStackrynIngest()`, added `triggerStackrynFileUpload(file)` (POSTs a
+  `FormData` with the file under the `file` field — no `Content-Type` header,
+  so the browser sets the multipart boundary).
+
+Verification: `npm test` 18/18 (unchanged from UOW-3.0 — no existing
+fixture/request shape changed, so `test:stackryn`'s 10 assertions and
+`test:sse`'s 4 all still pass as-is). The new multipart path isn't covered by
+the existing `verify-stackryn-ingest.ts` (JSON-body only), so it was
+hand-verified against a live `tsx server.ts`: uploaded a custom
+`custom-upload.json` (`[{"system":"Custom App","legacy":true}]`) via
+`curl -F file=@...` and confirmed a 200 with a dynamically-derived
+`UPLOAD-CUSTOM-UPLOAD-JSON` project, a CRITICAL "legacy/mainframe" risk
+correctly matched from the content, and a real audit hash; also confirmed an
+unsupported extension (`.exe`) is rejected with 400 before reaching
+governance. `tsc -b` type-checks clean.

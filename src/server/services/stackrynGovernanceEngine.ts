@@ -141,6 +141,82 @@ function projectHorizonDashboard(systemsMapped: number): Omit<ModernizationDashb
   }
 }
 
+const PROJECT_HORIZON_FIXTURES = new Set(['enterprise-rfp.pdf.txt', 'system-matrix.csv', 'ciso-constraints.txt'])
+
+const CONTENT_RISK_SIGNALS: ReadonlyArray<{ pattern: RegExp; risk: ModernizationRisk }> = [
+  {
+    pattern: /\bpii\b/i,
+    risk: {
+      severity: 'HIGH',
+      title: 'Uploaded content references PII handling',
+      recommendation: 'Confirm customer PII is scoped out of any new service before it touches this dataset.',
+    },
+  },
+  {
+    pattern: /as400|mainframe|legacy/i,
+    risk: {
+      severity: 'CRITICAL',
+      title: 'Legacy/mainframe dependency referenced in uploaded content',
+      recommendation: 'Map the legacy system\'s integration surface before committing to a cutover timeline.',
+    },
+  },
+  {
+    pattern: /oracle|end-of-life|eol\b/i,
+    risk: {
+      severity: 'HIGH',
+      title: 'End-of-life dependency referenced in uploaded content',
+      recommendation: 'Plan a migration off the unsupported dependency ahead of go-live.',
+    },
+  },
+  {
+    pattern: /soc ?2|compliance|audit/i,
+    risk: {
+      severity: 'MEDIUM',
+      title: 'Compliance/audit requirement referenced in uploaded content',
+      recommendation: 'Route the requirement through the compliance review checklist before scoping starts.',
+    },
+  },
+]
+
+const DEFAULT_UPLOAD_RISK: ModernizationRisk = {
+  severity: 'MEDIUM',
+  title: 'No explicit risk signals detected in the uploaded content',
+  recommendation: 'Recommend a manual review pass by a solutions architect before scoping.',
+}
+
+/** UOW-4.0: client-uploaded discovery artifacts don't carry the Project Horizon engagement's known findings, so the dashboard is derived from the file's own content instead of the canned scenario data. */
+function clientUploadDashboard(parsed: ParsedIngestPayload): Omit<ModernizationDashboardPayload, 'filename' | 'format' | 'recordCount' | 'fields' | 'policyStatus' | 'reason'> {
+  const haystack = `${parsed.excerpt} ${parsed.fields.join(' ')}`
+  const risks = CONTENT_RISK_SIGNALS.filter(({ pattern }) => pattern.test(haystack)).map(({ risk }) => risk)
+  if (risks.length === 0) risks.push(DEFAULT_UPLOAD_RISK)
+
+  const systemsMapped = parsed.format === 'csv' ? Math.max(parsed.recordCount, 1) : Math.max(parsed.fields.length, 1)
+  const priorityBySeverity: Record<RiskSeverity, LinearIssue['priority']> = { CRITICAL: 1, HIGH: 2, MEDIUM: 3 }
+
+  return {
+    projectId: `UPLOAD-${parsed.filename.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toUpperCase()}`,
+    projectName: `Custom Ingest — ${parsed.filename}`,
+    metrics: {
+      totalRequirements: Math.max(systemsMapped * 3, 6),
+      systemsMapped,
+      fitScorePercentage: 70,
+      estimatedCostRangeUsd: { min: systemsMapped * 15_000, max: systemsMapped * 25_000 },
+      estimatedDurationWeeks: { min: Math.max(4, systemsMapped), max: Math.max(8, systemsMapped * 2) },
+    },
+    risks,
+    linearExport: {
+      project: `Custom Ingest — ${parsed.filename}`,
+      epics: ['Phase 1: Discovery & Risk Remediation'],
+      issues: risks.map((risk) => ({
+        title: risk.title,
+        labels: ['upload', `risk-${risk.severity.toLowerCase()}`],
+        priority: priorityBySeverity[risk.severity],
+        descriptionMarkdown: `**Acceptance Criteria**\n- [ ] ${risk.recommendation}`,
+      })),
+    },
+  }
+}
+
 export function evaluateGovernance(parsed: ParsedIngestPayload): ModernizationDashboardPayload {
   const base = { filename: parsed.filename, format: parsed.format, recordCount: parsed.recordCount, fields: parsed.fields }
 
@@ -152,6 +228,10 @@ export function evaluateGovernance(parsed: ParsedIngestPayload): ModernizationDa
   const forbidden = checkForbiddenOperation(parsed.excerpt)
   if (!forbidden.allowed) {
     return { ...base, policyStatus: 'denied', reason: forbidden.reason }
+  }
+
+  if (!PROJECT_HORIZON_FIXTURES.has(parsed.filename)) {
+    return { ...base, policyStatus: 'allowed', ...clientUploadDashboard(parsed) }
   }
 
   // fixtures/stackryn/system-matrix.csv is the 12-system inventory this

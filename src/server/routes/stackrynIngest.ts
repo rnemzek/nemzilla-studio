@@ -1,8 +1,38 @@
 import type { Context } from 'hono'
 import { emitPipelineEvent } from '../services/eventBus.ts'
-import { isSupportedFormat, parseIngestPayload } from '../services/stackrynFormatParsers.ts'
+import { inferFormatFromFilename, isSupportedFormat, parseIngestPayload } from '../services/stackrynFormatParsers.ts'
 import { evaluateGovernance } from '../services/stackrynGovernanceEngine.ts'
 import { getChainBacklog } from '../services/auditLedger.ts'
+
+/** UOW-4.0: pulls `{ format, filename, payload }` out of either a JSON preset body or a multipart file upload (FileUploadZone.tsx) — the two request shapes the client sends. */
+async function readIngestRequest(
+  c: Context,
+): Promise<{ format?: string; filename?: string; payload?: string } | { error: string }> {
+  const contentType = c.req.header('content-type') ?? ''
+  if (contentType.includes('multipart/form-data')) {
+    let body: Record<string, string | File>
+    try {
+      body = await c.req.parseBody()
+    } catch {
+      return { error: 'invalid multipart form data' }
+    }
+    const file = body.file
+    if (!(file instanceof File)) {
+      return { error: 'missing "file" field in multipart upload' }
+    }
+    const format = inferFormatFromFilename(file.name)
+    if (!format) {
+      return { error: 'unsupported file extension (expected .pdf, .csv, .txt, or .json)' }
+    }
+    return { format, filename: file.name, payload: await file.text() }
+  }
+
+  try {
+    return (await c.req.json()) ?? {}
+  } catch {
+    return { error: 'invalid JSON body' }
+  }
+}
 
 /**
  * UOW-1.0: `/api/stackryn/ingest` — accepts a multi-format scoping request,
@@ -13,17 +43,14 @@ import { getChainBacklog } from '../services/auditLedger.ts'
  * wiring needed for either — see eventBus.ts's doc comment.
  */
 export async function stackrynIngestHandler(c: Context) {
-  let body: unknown
-  try {
-    body = await c.req.json()
-  } catch {
-    return c.json({ error: 'invalid JSON body' }, 400)
+  const parsedRequest = await readIngestRequest(c)
+  if ('error' in parsedRequest) {
+    return c.json({ error: parsedRequest.error }, 400)
   }
-
-  const { format, filename, payload } = (body ?? {}) as { format?: string; filename?: string; payload?: string }
+  const { format, filename, payload } = parsedRequest
 
   if (!isSupportedFormat(format)) {
-    return c.json({ error: 'invalid or missing format (expected "pdf", "csv", or "txt")' }, 400)
+    return c.json({ error: 'invalid or missing format (expected "pdf", "csv", "txt", or "json")' }, 400)
   }
   if (typeof filename !== 'string' || !filename) {
     return c.json({ error: 'invalid or missing filename' }, 400)

@@ -1,0 +1,13 @@
+CISO COMPLIANCE CONSTRAINTS — PROJECT HORIZON
+
+1. Zero local PII storage — no customer PII may be persisted outside the
+   vendor-hosted CRM/identity layer.
+2. SOC2 Type II certification required for all new services prior to
+   production traffic.
+3. Authentication must use SAML 2.0 via Okta SSO — no local username/
+   password auth paths permitted.
+4. Audit logs must be retained for a minimum of 7 years and be tamper-
+   evident (hash-chained).
+5. Any offline/batch sync path (e.g. AS400 nightly export) must be
+   reconciled against the real-time system of record before use in
+   financial reporting.

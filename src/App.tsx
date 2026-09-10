@@ -3,6 +3,7 @@ import SwarmCanvas from './components/SwarmCanvas.tsx'
 import EcosystemNav from './components/EcosystemNav.tsx'
 import AppPreview from './components/AppPreview.tsx'
 import AuditLedgerPanel from './components/AuditLedgerPanel.tsx'
+import StackrynCockpitPanel from './components/StackrynCockpitPanel.tsx'
 import AdminDrawer from './components/AdminDrawer.tsx'
 import GuidedWorkflowBanner from './components/GuidedWorkflowBanner.tsx'
 import ExecutiveShowcaseModal from './components/ExecutiveShowcaseModal.tsx'
@@ -34,6 +35,7 @@ function App() {
           <Terminal />
           <AppPreview />
           <AuditLedgerPanel />
+          <StackrynCockpitPanel />
         </div>
       </main>
       <AdminDrawer />

@@ -1,4 +1,0 @@
-ACME Corp — Q3 scoping notes
-Vendor: ACME Corp
-Requested auto-approve threshold: $150
-Catalog: Widgets, Gadgets, Sprockets

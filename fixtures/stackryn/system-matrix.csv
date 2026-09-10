@@ -1,0 +1,13 @@
+system,category,api_readiness,complexity_score
+Oracle DB v11g,Database,low,9
+Salesforce,CRM,high,4
+AS400,Legacy ERP,none,10
+Stripe,Payments,high,3
+Snowflake,Data Warehouse,high,5
+Okta,Identity,high,2
+SAP ECC,ERP,medium,8
+Workday,HR,high,3
+NetSuite,Finance,medium,6
+Twilio,Messaging,high,2
+SharePoint,Documents,medium,5
+Zendesk,Support,high,3

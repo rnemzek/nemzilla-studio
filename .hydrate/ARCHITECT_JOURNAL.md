@@ -47,3 +47,34 @@ there instead; see Dev Journal for the full file list and the two
 out-of-literal-File-Scope edits (swarmStore.ts, sessionSerializer.ts) that
 were necessary for the acceptance criteria to actually work / not regress
 the existing saved-runs list.
+
+## UOW-3.0 — Stackryn Modernization Cockpit & Linear Backlog Exporter (2026-09-10)
+
+New contract: `POST /api/stackryn/ingest` now returns a
+`ModernizationDashboardPayload` (breaking change from UOW-1.0/2.0's flat
+`IngestedScopePayload`, but nothing outside this feature consumed that
+shape) — `{ filename, format, recordCount, fields, policyStatus, reason?,
+projectId?, projectName?, metrics?, risks?, linearExport? }`, the optional
+fields present only when `policyStatus === 'allowed'`. Response also now
+carries a top-level `auditHash` (the real SHA-256 hex of this call's own
+Cryptographic Audit Ledger block).
+
+Established design decision: the dashboard's project-level metrics/risks/
+Linear export are constant regardless of which single artifact (RFP/CSV/
+TXT) was ingested — a single POST call ingests one file, but "the
+Modernization Cockpit" is inherently a whole-engagement view, and the
+Architect's own acceptance criteria gave fixed figures (42/84%/$420k-$480k/
+16-20wk) rather than per-file-derived ones. Only `systemsMapped` is
+cross-checked against the real CSV record count as a light "don't drift
+from the fixture" safeguard. If a future UOW wants genuinely per-document
+differentiated output, that's a new design (likely needs a session/
+aggregate concept across multiple ingest calls), not a tweak to this one.
+
+Trade-off: the UOW's named target `<AppPreview/>` is a sandboxed,
+postMessage-driven iframe rendering *generated app* HTML
+(document.write()'d strings from swarmCodeSynthesizer.ts) — a fundamentally
+different rendering pipeline from a normal reactive dashboard with a native
+clipboard button. Implemented the Cockpit as `StackrynCockpitPanel.tsx`, a
+standalone `FloatingShell` panel (same pattern as SwarmCanvas/
+AuditLedgerPanel) instead, satisfying the File Scope's own bracketed
+alternative ("Preview / Dashboard views").

@@ -2,6 +2,7 @@ import type { Context } from 'hono'
 import { emitPipelineEvent } from '../services/eventBus.ts'
 import { isSupportedFormat, parseIngestPayload } from '../services/stackrynFormatParsers.ts'
 import { evaluateGovernance } from '../services/stackrynGovernanceEngine.ts'
+import { getChainBacklog } from '../services/auditLedger.ts'
 
 /**
  * UOW-1.0: `/api/stackryn/ingest` — accepts a multi-format scoping request,
@@ -54,9 +55,22 @@ export async function stackrynIngestHandler(c: Context) {
     audit: { payload: result, policyStatus: result.policyStatus },
   })
 
+  // The audit daemon drains via setImmediate (see auditLedger.ts) — it was
+  // already scheduled by the emitPipelineEvent() call above, so yielding one
+  // tick here is enough for `chain.push(block)` to have run (that happens
+  // synchronously at the top of the daemon's drain loop, before its own
+  // `await persistBlock()`) by the time this resolves.
+  await new Promise((resolve) => setImmediate(resolve))
+  // Scanned rather than assumed-latest: the classic/swarm demo pipelines run
+  // concurrently and append their own audit blocks continuously, so this
+  // ingest's own block isn't guaranteed to be the single most recent one.
+  const auditHash = getChainBacklog(20)
+    .reverse()
+    .find((block) => block.action === 'agent_step' && block.sessionId === sessionId)?.hash
+
   if (result.policyStatus === 'denied') {
-    return c.json({ success: false, result }, 422)
+    return c.json({ success: false, result, auditHash }, 422)
   }
 
-  return c.json({ success: true, result })
+  return c.json({ success: true, result, auditHash })
 }

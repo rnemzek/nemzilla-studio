@@ -1,0 +1,17 @@
+PROJECT HORIZON — CORE ERP & BILLING MODERNIZATION
+Request for Proposal (Executive Summary — extracted via PDF text layer)
+
+Sponsor: VP of Enterprise Technology
+Objective: Replace the legacy AS400-driven order-to-cash pipeline and Oracle
+DB v11g billing warehouse with a modern, API-first platform integrated with
+Salesforce, Stripe, and Snowflake.
+
+Scope:
+- Real-time billing and portal modernization for 40,000+ active accounts.
+- Zero local PII storage — all customer PII must reside in the vendor-hosted
+  identity/CRM layer.
+- SOC2 Type II compliance is mandatory for go-live.
+- Target go-live: Q3 next fiscal year.
+
+Budget Guidance: $420,000 - $480,000
+Requested Timeline: 16-20 weeks from kickoff.

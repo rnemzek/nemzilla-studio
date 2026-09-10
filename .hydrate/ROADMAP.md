@@ -6,4 +6,4 @@
 
 ## Phase 2: Preset UI & Interactive Harness
 - [x] **UOW-2.0**: Register Stackryn Preset Recipe (`.codex/demos/acme-stackryn.json`) and UI Trigger Controls inside `<CommandCenterDrawer/>`.
-- [ ] **UOW-3.0**: Live Scope & Risk Visualization in `<AppPreview/>` with downstream Jira JSON payload exporter.
+- [x] **UOW-3.0**: Live Scope & Risk Visualization (Stackryn Modernization Cockpit) with downstream Linear backlog JSON payload exporter. (Delivered as a standalone dashboard panel, not embedded in `<AppPreview/>`; exporter targets Linear, not Jira — the actual UOW-3.0 payload named Linear throughout, this roadmap line's "Jira" predates that and was never corrected.)

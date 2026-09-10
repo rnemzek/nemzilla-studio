@@ -5,5 +5,5 @@
 - [x] **UOW-1.0**: Hono Multi-Format Ingest API (`/api/stackryn/ingest`), Audit Ledger integration, and SSE streaming telemetry.
 
 ## Phase 2: Preset UI & Interactive Harness
-- [ ] **UOW-2.0**: Register Stackryn Preset Recipe (`.codex/demos/acme-stackryn.json`) and UI Trigger Controls inside `<CommandCenterDrawer/>`.
+- [x] **UOW-2.0**: Register Stackryn Preset Recipe (`.codex/demos/acme-stackryn.json`) and UI Trigger Controls inside `<CommandCenterDrawer/>`.
 - [ ] **UOW-3.0**: Live Scope & Risk Visualization in `<AppPreview/>` with downstream Jira JSON payload exporter.

@@ -1,7 +1,8 @@
 import { For, Show, createSignal } from 'solid-js'
-import { COOKBOOK_PRESETS } from '../lib/cookbookPresets.ts'
+import { COOKBOOK_PRESETS, STACKRYN_INGEST_PRESETS, type StackrynIngestPreset } from '../lib/cookbookPresets.ts'
 import { sandboxStore } from '../lib/sandboxStore.ts'
 import { recipeState } from '../lib/recipeStore.ts'
+import { triggerStackrynIngest } from '../lib/stackrynIngestClient.ts'
 
 interface SavedSessionSummary {
   sessionId: string
@@ -14,6 +15,8 @@ export default function CookbookDropdown() {
   const [isOpen, setIsOpen] = createSignal(false)
   const [savedSessions, setSavedSessions] = createSignal<SavedSessionSummary[]>([])
   const [loadingSaved, setLoadingSaved] = createSignal(false)
+  const [ingestingId, setIngestingId] = createSignal<string | null>(null)
+  const [ingestStatus, setIngestStatus] = createSignal<string | null>(null)
 
   async function open() {
     setIsOpen(true)
@@ -55,6 +58,31 @@ export default function CookbookDropdown() {
     setIsOpen(false)
   }
 
+  /**
+   * UOW-2.0: unlike `launchPreset` above, this doesn't touch AppPreview/the
+   * sandbox iframe at all — it fires the Stackryn ingest pipeline
+   * (PLANNING -> PARSING -> EVALUATING -> DONE), which broadcasts over
+   * `/api/agent/stream` for SwarmCanvas.tsx's always-on spectator connection
+   * to pick up live and records the result to the Cryptographic Audit
+   * Ledger. The dropdown stays open so the status line is visible.
+   */
+  async function launchStackrynIngest(preset: StackrynIngestPreset) {
+    setIngestingId(preset.id)
+    setIngestStatus(null)
+    try {
+      const result = await triggerStackrynIngest(preset)
+      setIngestStatus(
+        result.policyStatus === 'allowed'
+          ? `✓ ${preset.label}: ${result.recordCount} record(s) allowed`
+          : `✗ ${preset.label}: ${result.reason ?? result.policyStatus}`,
+      )
+    } catch (err) {
+      setIngestStatus(`✗ ${preset.label}: ${err instanceof Error ? err.message : 'ingest failed'}`)
+    } finally {
+      setIngestingId(null)
+    }
+  }
+
   return (
     <div class="relative">
       <button
@@ -81,6 +109,27 @@ export default function CookbookDropdown() {
               </button>
             )}
           </For>
+
+          <div class="my-2 border-t border-border" />
+          <p class="px-2 py-1 text-xs uppercase tracking-wide text-text-muted">Stackryn Scope Ingestion</p>
+          <For each={STACKRYN_INGEST_PRESETS}>
+            {(preset) => (
+              <button
+                type="button"
+                disabled={ingestingId() === preset.id}
+                class="block w-full rounded-md px-2 py-1.5 text-left text-sm text-text hover:bg-surface-raised disabled:opacity-60"
+                onClick={() => launchStackrynIngest(preset)}
+              >
+                <span class="block font-medium">{preset.label}</span>
+                <span class="block text-xs text-text-muted">
+                  {ingestingId() === preset.id ? 'Ingesting…' : `${preset.format.toUpperCase()} — ${preset.filename}`}
+                </span>
+              </button>
+            )}
+          </For>
+          <Show when={ingestStatus()}>
+            <p class="px-2 py-1 text-xs text-text-muted">{ingestStatus()}</p>
+          </Show>
 
           <div class="my-2 border-t border-border" />
           <p class="px-2 py-1 text-xs uppercase tracking-wide text-text-muted">AgentZ Cookbook (saved runs)</p>

@@ -45,7 +45,14 @@ export async function listSavedSessions(): Promise<SessionSummary[]> {
     if (!name.endsWith('.json') || name.startsWith('custom-')) continue
     try {
       const raw = await readFile(path.join(DEMOS_DIR, name), 'utf8')
-      const record = JSON.parse(raw) as SessionRecord
+      const record = JSON.parse(raw) as Partial<SessionRecord>
+      // Not every *.json in this directory is a recorded build (e.g. UOW-2.0's
+      // acme-stackryn.json is a static preset definition) — skip anything that
+      // doesn't actually look like a SessionRecord rather than pushing
+      // `undefined` fields that would later crash the timestamp sort below.
+      if (typeof record.sessionId !== 'string' || typeof record.scenario !== 'string' || typeof record.prompt !== 'string' || typeof record.timestamp !== 'string') {
+        continue
+      }
       summaries.push({
         sessionId: record.sessionId,
         scenario: record.scenario,

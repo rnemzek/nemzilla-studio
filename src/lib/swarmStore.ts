@@ -42,7 +42,7 @@ export const DEFAULT_STAGE_ORDER: AgentName[] = ['Planner', 'Architect', 'Lead D
  * nodes (satisfies "pipeline resets and updates cleanly across multiple
  * runs" regardless of which pipeline — classic or swarm — just started).
  */
-export const RUN_START_AGENTS = new Set(['Planner', 'PO'])
+export const RUN_START_AGENTS = new Set(['Planner', 'PO', 'Stackryn Ingest'])
 
 export function edgeKey(source: AgentName, target: AgentName): string {
   return `${source}->${target}`
@@ -200,19 +200,25 @@ export function createSwarmStore(): SwarmStore {
 
         setState(
           produce((draft) => {
-            if (step === 'EXECUTING' && RUN_START_AGENTS.has(agent)) resetForNewRun(draft)
+            // Every pipeline's *first* beat signals a fresh run — 'EXECUTING'
+            // for the classic/swarm pipelines, 'PLANNING' for the Stackryn
+            // ingest pipeline (agentStream.ts / stackrynIngest.ts).
+            if ((step === 'EXECUTING' || step === 'PLANNING') && RUN_START_AGENTS.has(agent)) resetForNewRun(draft)
             ensureAgent(draft, agent)
 
-            if (step === 'EXECUTING') {
-              draft.agents[agent]!.status = 'active'
-              const idx = draft.stageOrder.indexOf(agent)
-              if (idx > 0) draft.edges[edgeKey(draft.stageOrder[idx - 1]!, agent)] = false
-            } else if (step === 'DONE') {
+            if (step === 'DONE') {
               draft.agents[agent]!.status = 'completed'
               const idx = draft.stageOrder.indexOf(agent)
               if (idx !== -1 && idx < draft.stageOrder.length - 1) {
                 draft.edges[edgeKey(agent, draft.stageOrder[idx + 1]!)] = true
               }
+            } else {
+              // Any other named beat (classic/swarm 'EXECUTING', or Stackryn
+              // ingest's 'PLANNING' -> 'PARSING' -> 'EVALUATING') reads as
+              // "still actively working" on the canvas.
+              draft.agents[agent]!.status = 'active'
+              const idx = draft.stageOrder.indexOf(agent)
+              if (idx > 0) draft.edges[edgeKey(draft.stageOrder[idx - 1]!, agent)] = false
             }
           }),
         )

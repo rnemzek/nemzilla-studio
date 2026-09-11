@@ -283,7 +283,7 @@ export default function Terminal() {
           <PanelHelpButton title="AgentZ Chat">
             <p>
               Your conversational entry point — free text goes straight to the AI PO discovery
-              interview, which gathers what you want built (an Order Entry or Unified Itinerary app).
+              interview, which gathers what you want built (a TODO List micro-app).
             </p>
             <p class="mt-1.5">
               Type "/" for the slash-command palette (build, template, launch, and more), or just

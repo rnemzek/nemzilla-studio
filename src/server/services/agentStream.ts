@@ -7,7 +7,7 @@ import { isValidSessionId, readSessionBundle } from './sessionBundleRecorder.ts'
 import { isValidVisitorId, sanitizeHandle, touchVisitor, linkPipelineSession, addMilestone } from './visitorTracker.ts'
 import { sendHighValueAlert } from './webhookNotifier.ts'
 import { dispatchDomainAgents, type DomainAgentResult } from './domainAgents.ts'
-import { synthesizeOrderEntryApp, synthesizeItineraryApp, type SwarmCatalogItem } from './swarmCodeSynthesizer.ts'
+import { synthesizeItineraryApp, type SwarmCatalogItem } from './swarmCodeSynthesizer.ts'
 import {
   claimSession,
   endSession,
@@ -51,12 +51,13 @@ const CODE_CHUNK_SIZE = 24
 const CODE_CHUNK_DELAY_MS = 8
 
 /**
- * UOW-11 Task 11.4/11.5: the conversational-build counterpart to `PIPELINE`
- * above. `[Domain Micro-Agents]` (Task 11.5) is now a real, variable-length
- * sub-sequence — `dispatchDomainAgents()` in `domainAgents.ts` decides which
- * agents actually run based on the interview's catalog/vendor content, so a
- * plain retail interview dispatches just AI Vendor + AI OE while one
- * mentioning recipes/sports/movies/tasks pulls in the matching extra agent(s).
+ * UOW-11 Task 11.4/11.5 / UOW-6.0: the conversational-build counterpart to
+ * `PIPELINE` above. `[Domain Micro-Agents]` (Task 11.5) is now a real,
+ * variable-length sub-sequence — `dispatchDomainAgents()` in
+ * `domainAgents.ts` decides which agents actually run based on the
+ * interview's catalog/vendor content: AI Vendor + AI TODO always run (this
+ * platform's single supported app-generation domain), and a mention of
+ * recipes/sports/movies pulls in the matching optional extra agent(s).
  * `Lead Dev` here is still reasoning-only (no generated_app_payload yet) —
  * actual code synthesis from the dispatched agents' schemas is Task 11.6's
  * Andiamo launch, not this one.
@@ -69,7 +70,7 @@ interface SwarmContext {
 
 const SWARM_THOUGHTS = {
   po: (ctx: SwarmContext) =>
-    `Reviewing the discovery interview for ${ctx.vendorName} — ${ctx.itemCount} catalog item(s), a $${ctx.hitlThreshold} HITL threshold requested.`,
+    `Reviewing the discovery interview for ${ctx.vendorName} — ${ctx.itemCount} task(s), a $${ctx.hitlThreshold} review threshold requested.`,
   architect: (ctx: SwarmContext) => `Compiling the blueprint: state machine, UI tree, and policy boundary model for ${ctx.vendorName}.`,
   policy: () =>
     `Evaluating governance bounds against the $${SYSTEM_CEILING.maxAutoApproveThreshold} auto-approve ceiling and $${SYSTEM_CEILING.maxOrderThreshold} auto-deny boundary.`,
@@ -203,20 +204,7 @@ async function runPipeline(sessionId: string, prompt?: string): Promise<void> {
     if (isAborted(sessionId)) return
 
     if (agent === 'Lead Dev' && prompt && forbidden.allowed) {
-      const { scenario, code, policyCheck } = generateAppSnippet(prompt, sessionId)
-      if (policyCheck) {
-        const policyEvent: Omit<PipelineEvent, 'sessionId'> = {
-          name: 'policy_check',
-          audit: {
-            payload: { type: 'order_threshold', scenario, ...policyCheck },
-            policyStatus: policyCheck.clamped ? 'clamped' : 'allowed',
-          },
-        }
-        if (policyCheck.clamped) {
-          policyEvent.notify = { type: 'warning', message: policyCheck.reason ?? 'Policy value clamped.' }
-        }
-        emit(policyEvent)
-      }
+      const { scenario, code } = generateAppSnippet(prompt, sessionId)
       for (const chunk of chunkString(code, CODE_CHUNK_SIZE)) {
         if (isAborted(sessionId)) return
         emit({ name: 'generated_app_payload', broadcast: { scenario, code: chunk, done: false } })
@@ -381,28 +369,16 @@ async function runSwarmPipeline(sessionId: string, swarmSessionId: string): Prom
   // pipeline's generated_app_payload chunks so `sandboxStore.ts` needs zero
   // changes to render it.
   //
-  // UAT fix: this used to always call synthesizeOrderEntryApp(), regardless
-  // of what domain the interview actually captured — an itinerary/day-plan
-  // interview (tasks like "walk the dog") got rendered as a shopping cart
-  // with a "Submit Order" button. `dispatchDomainAgents()` above already ran
-  // a real semantic classification of this catalog/vendor content — "AI
-  // TODO" only dispatches for vendors whose app genuinely involves tracking
-  // tasks/errands (see domainAgents.ts's registry description) — so reusing
-  // that same signal to pick the synthesizer is consistent with the rest of
-  // this pipeline's "no keyword matching, real classification" approach,
-  // rather than adding a second, redundant domain check.
-  const isItineraryDomain = dispatched.some((d) => d.agent === 'AI TODO')
-  const scenario = isItineraryDomain ? 'swarm-itinerary' : 'swarm-order-entry'
-  const code = isItineraryDomain
-    ? synthesizeItineraryApp(ctx.vendorName, catalog.items as SwarmCatalogItem[], autoApproveCeiling, SYSTEM_CEILING.maxOrderThreshold, dispatched)
-    : synthesizeOrderEntryApp(
-        swarmSessionId,
-        ctx.vendorName,
-        catalog.items as SwarmCatalogItem[],
-        autoApproveCeiling,
-        SYSTEM_CEILING.maxOrderThreshold,
-        dispatched,
-      )
+  // UOW-6.0: this platform now has a single supported app-generation domain
+  // (TODO list) — every swarm build synthesizes through synthesizeItineraryApp().
+  const scenario = 'swarm-itinerary'
+  const code = synthesizeItineraryApp(
+    ctx.vendorName,
+    catalog.items as SwarmCatalogItem[],
+    autoApproveCeiling,
+    SYSTEM_CEILING.maxOrderThreshold,
+    dispatched,
+  )
 
   const leadDevOk = await runSwarmStage(emit, sessionId, 'Lead Dev', SWARM_THOUGHTS.leadDev(ctx, dispatched), {
     auditPayload: { swarmSessionId, dispatchedAgents: dispatched.map((d) => d.agent) },

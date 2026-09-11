@@ -276,10 +276,10 @@ async function continueInterview(ctx: CommandContext, rawInput: string): Promise
 function summarizeBundle(ctx: CommandContext, sessionId: string, bundle: SessionBundle) {
   const catalog = bundle.catalog as { vendorName: string; items: { name: string; price: number }[] } | null
   const policyRules = bundle.policyRules as { hitlThreshold: number } | null
-  ctx.print(`vendor:        ${catalog?.vendorName ?? 'unknown'}`, 'output')
-  ctx.print(`catalog items: ${catalog?.items.length ?? 0}`, 'output')
-  ctx.print(`HITL ceiling:  $${policyRules?.hitlThreshold ?? '?'}`, 'output')
-  ctx.print(`session:       ${sessionId}`, 'output')
+  ctx.print(`plan:            ${catalog?.vendorName ?? 'unknown'}`, 'output')
+  ctx.print(`tasks:           ${catalog?.items.length ?? 0}`, 'output')
+  ctx.print(`review ceiling:  $${policyRules?.hitlThreshold ?? '?'}`, 'output')
+  ctx.print(`session:         ${sessionId}`, 'output')
 }
 
 async function runAndiamo(ctx: CommandContext): Promise<void> {

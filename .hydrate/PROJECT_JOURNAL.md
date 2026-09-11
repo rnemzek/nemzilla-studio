@@ -9,3 +9,4 @@ Project plan UOWs completed with descriptions and stats.
 - [x] **[UOW-3.0]** Stackryn Modernization Cockpit & Linear Backlog Exporter — 2026-09-10 | Pass: 10/10 tests + manual browser verification
 - [x] **[UOW-4.0]** Stackryn Unified Ingest UX & Dynamic File Upload Integration — 2026-09-10 | Pass: 18/18 tests + manual curl verification
 - [x] **[UOW-5.0]** Executive Mobile-First Risk & Effort Charting — 2026-09-10 | Pass: 18/18 tests + manual browser verification (desktop + 375px mobile)
+- [x] **[UOW-6.0]** Purge Order Entry Domain & Narrow to TODO-Only Micro-App Engine — 2026-09-11 | Pass: tsc -b clean, 2/2 test suites (npm test), manual browser verification (no console errors)

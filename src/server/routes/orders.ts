@@ -3,9 +3,12 @@ import { isValidSessionId } from '../services/sessionBundleRecorder.ts'
 import { enqueueAuditEvent } from '../services/auditLedger.ts'
 
 /**
- * UOW-11 Task 11.6: a synthesized order-entry app (see
- * swarmCodeSynthesizer.ts) reports every order decision back to the parent
- * page over postMessage; sandboxStore.ts relays it here. This is called
+ * UOW-11 Task 11.6: a generated app reports an order/threshold decision back
+ * to the parent page over postMessage; sandboxStore.ts relays it here. Kept
+ * as a generic decision-logging endpoint after UOW-6.0 removed the
+ * order-entry app type — no currently generated app emits this message, but
+ * the endpoint and its audit trail stay in place for whatever future app
+ * type wants the same review-decision logging. This is called
  * long after the swarm pipeline session that generated the app has ended
  * (sessionManager's builder lock is already released), so it deliberately
  * calls enqueueAuditEvent() directly rather than going through eventBus.ts —

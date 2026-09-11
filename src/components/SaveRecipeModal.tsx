@@ -73,7 +73,7 @@ export default function SaveRecipeModal() {
                   value={name()}
                   onInput={(event) => setName(event.currentTarget.value)}
                   class="mt-1 w-full rounded-md border border-border bg-surface-raised p-2 text-sm text-text"
-                  placeholder="e.g. ACME Order — $250 ceiling"
+                  placeholder="e.g. Today's Errands — $250 review threshold"
                 />
               </label>
 

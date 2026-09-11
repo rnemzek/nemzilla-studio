@@ -5,7 +5,7 @@ const VALUE_PROPS: Array<{ icon: string; title: string; body: string }> = [
   {
     icon: '⚡',
     title: 'Instant Micro-Apps',
-    body: 'Synthesizes natural language into interactive B2B Order Entry or Unified Itinerary applications in under 60 seconds.',
+    body: 'Synthesizes natural language into interactive TODO List micro-apps in under 60 seconds.',
   },
   {
     icon: '🌐',

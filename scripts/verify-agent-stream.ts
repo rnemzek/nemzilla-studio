@@ -118,8 +118,8 @@ async function testFullPipeline() {
 }
 
 async function testAppGenerationPrompt() {
-  console.log('-> requesting a generated_app_payload via ?prompt=ACME Order...')
-  const res = await fetch(`${STREAM_URL}?${new URLSearchParams({ prompt: 'ACME Order' })}`)
+  console.log('-> requesting a generated_app_payload via ?prompt=Today Itinerary...')
+  const res = await fetch(`${STREAM_URL}?${new URLSearchParams({ prompt: 'Today Itinerary' })}`)
   assert(res.ok, `expected 200 from prompted stream, got ${res.status}`)
   const reader = res.body!.getReader()
   const decoder = new TextDecoder()
@@ -143,13 +143,13 @@ async function testAppGenerationPrompt() {
 
   const final = payloadFrames.at(-1)!.data as { scenario: string; code: string; done: boolean }
   assert(final.done === true, 'final generated_app_payload frame should have done: true')
-  assert(final.scenario === 'acme-order', `expected acme-order scenario, got "${final.scenario}"`)
-  assert(final.code.includes('ACME'), 'final payload code should mention ACME')
+  assert(final.scenario === 'today-itinerary', `expected today-itinerary scenario, got "${final.scenario}"`)
+  assert(final.code.includes('TODAY'), 'final payload code should mention TODAY')
 
   const intermediate = payloadFrames.filter((f) => (f.data as { done: boolean }).done === false)
   assert(intermediate.length > 0, 'expected intermediate (done: false) chunks before the final one')
 
-  console.log(`   ok: ${payloadFrames.length} generated_app_payload frames, final chunk matched scenario "acme-order"`)
+  console.log(`   ok: ${payloadFrames.length} generated_app_payload frames, final chunk matched scenario "today-itinerary"`)
 }
 
 async function testSpectatorMode() {

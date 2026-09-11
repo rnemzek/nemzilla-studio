@@ -52,53 +52,26 @@ export interface DomainTemplate {
    * than silently falling through to the generic default-sandbox card under
    * a misleading domain label.
    */
-  previewScenario: 'acme-order' | 'today-itinerary' | 'b2b-lead-scoring' | null
+  previewScenario: 'today-itinerary' | null
   /** The seed prompt `sandboxStore.connectGenerator()` sends when a visitor asks to preview this domain's demo. */
   previewPrompt: string
 }
 
 export const TEMPLATE_REGISTRY: DomainTemplate[] = [
   {
-    id: 'order-entry',
-    name: 'Order Entry (B2B)',
-    description: 'ACME Corp order-entry & approval — catalog, cart, and a HITL policy interceptor.',
+    id: 'todo',
+    name: 'TODO List',
+    description: 'A task/checklist micro-app — errands, recipe prep, and a schedule, with a review-threshold flag on any pricier item.',
     systemPromptOverlay:
-      'Domain flavor: a classic B2B order-entry workflow. Keep the discovery centered on a vendor/company name, a product catalog with prices, and a supervisor approval threshold.',
+      "Domain flavor: a personal or team TODO list, not a B2B order. Treat the vendor/company name as the list or plan's own name, the catalog as tasks/errands/items with an optional cost each ($0 is fine when price doesn't apply), and the approval threshold as a spending line worth flagging for review.",
     swarmNodes: [
       { agent: 'AI PO', role: 'Discovery & requirements', color: 'sky' },
-      { agent: 'Policy Auditor', role: 'Governance & HITL thresholds', color: 'amber' },
-      { agent: 'Order Fulfillment Agent', role: 'Cart, checkout & shipping', color: 'emerald' },
-    ],
-    previewScenario: 'acme-order',
-    previewPrompt: 'ACME Order',
-  },
-  {
-    id: 'wfd',
-    name: "What's For Dinner",
-    description: 'Home meal planning — pantry check, recipe pick, and something to watch while you cook.',
-    systemPromptOverlay:
-      "Domain flavor: planning a home dinner, not a B2B order. Treat the vendor/company name as the household or meal event's name, the catalog as recipe ingredients or meal options with a per-serving cost, and the approval threshold as a grocery budget line the host wants a heads-up above.",
-    swarmNodes: [
-      { agent: 'Sous-Chef Agent', role: 'Recipe selection & prep steps', color: 'orange' },
-      { agent: 'Grocery Pantry Agent', role: 'Ingredient & pantry tracking', color: 'lime' },
-      { agent: 'Media Linker Agent', role: 'Dinner-and-a-show pairing', color: 'fuchsia' },
-    ],
-    previewScenario: null,
-    previewPrompt: "What's For Dinner",
-  },
-  {
-    id: 'itinerary',
-    name: 'Day Planner & Entertainment',
-    description: "Today's itinerary — game tracker, movie finder, and a schedule orchestrator.",
-    systemPromptOverlay:
-      "Domain flavor: planning a day's itinerary and entertainment lineup, not a B2B order. Treat the vendor/company name as the day or event's name, the catalog as planned activities or tickets with a cost each, and the approval threshold as a spending line for the day.",
-    swarmNodes: [
-      { agent: 'Sports-Sync Agent', role: "O's game tracker", color: 'red' },
-      { agent: 'Movie-Stream Finder', role: 'Trending picks to watch', color: 'violet' },
-      { agent: 'Schedule Orchestrator', role: 'Errands & timing', color: 'cyan' },
+      { agent: 'AI Vendor', role: 'Task catalog schema', color: 'emerald' },
+      { agent: 'AI TODO', role: 'Checklist & task modeling', color: 'lime' },
+      { agent: 'Policy Auditor', role: 'Governance & review thresholds', color: 'amber' },
     ],
     previewScenario: 'today-itinerary',
-    previewPrompt: 'My TODAY Itinerary',
+    previewPrompt: 'TODO List',
   },
 ]
 

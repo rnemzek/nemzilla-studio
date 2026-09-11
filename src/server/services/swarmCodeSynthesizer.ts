@@ -1,28 +1,19 @@
 /**
- * UOW-11 Task 11.6: consumes the aggregated session bundle (vendor/catalog
- * from the PO interview, the resolved policy ceilings, and the dispatched
- * domain agents' labels) to synthesize a real, executable order-entry
- * micro-app — the conversational-build counterpart to
- * appGeneratorPrompt.ts's buildAcmeOrderSnippet, parameterized by actual
- * interview data instead of a fixed scenario template. Reuses the exact same
- * Dual-Engine app shape (catalog, cart, HITL modal, virtual notification
- * drawer) established in UOW-07/UOW-08, so the generated app looks and
- * behaves consistently with every other AgentZ Studio scenario.
+ * UOW-11 Task 11.6 / UOW-6.0: consumes the aggregated session bundle
+ * (vendor/catalog from the PO interview, the resolved policy ceilings, and
+ * the dispatched domain agents' labels) to synthesize a real, executable
+ * TODO list micro-app — the conversational-build counterpart to
+ * appGeneratorPrompt.ts's buildUnifiedItinerarySnippet, parameterized by
+ * actual interview data instead of a fixed scenario template.
  */
 import type { DomainAgentResult } from './domainAgents.ts'
-
-// Mirrors SANDBOX_MESSAGE.order in src/lib/sandboxTemplate.ts. Duplicated
-// rather than imported: src/server and src/lib sit in separate tsconfig
-// projects (see sandboxFrame.ts for the same established pattern), so a
-// cross-project import isn't viable here.
-const ORDER_MESSAGE_TYPE = 'nemzilla:sandbox-order-decision'
 
 export interface SwarmCatalogItem {
   name: string
   price: number
-  /** Itinerary-only: a stated time for this item (e.g. "8:00 AM"). Ignored by synthesizeOrderEntryApp. */
+  /** A stated time for this item (e.g. "8:00 AM"). */
   time?: string | null
-  /** Itinerary-only: nested sub-items belonging to this parent (e.g. grocery items under "Get Groceries"). Ignored by synthesizeOrderEntryApp. */
+  /** Nested sub-items belonging to this parent (e.g. grocery items under "Get Groceries"). */
   subItems?: string[] | null
 }
 
@@ -35,173 +26,11 @@ function toInlineJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c')
 }
 
-export function synthesizeOrderEntryApp(
-  sessionId: string,
-  vendorName: string,
-  items: SwarmCatalogItem[],
-  autoApproveCeiling: number,
-  denyCeiling: number,
-  dispatched: DomainAgentResult[],
-): string {
-  const safeVendor = escapeHtml(vendorName)
-  const dispatchedLabel = escapeHtml(dispatched.map((d) => d.agent).join(', '))
-  const productsJson = toInlineJson(items.map((item, i) => ({ id: `item-${i}`, name: item.name, price: item.price })))
-
-  return `<div class="min-h-screen bg-slate-950 p-6 text-slate-100">
-  <div class="mx-auto max-w-2xl">
-    <h1 class="text-2xl font-bold">${safeVendor} — Order Entry &amp; Approval</h1>
-    <p class="mt-1 text-sm text-slate-400">Built by ${dispatchedLabel} — synthetic catalog, in-cart state, and a policy interceptor.</p>
-    <p class="mt-1 text-xs text-slate-500">Governance: auto-approve &le; $${autoApproveCeiling} &middot; HITL up to $${denyCeiling} &middot; auto-deny above $${denyCeiling} (system ceiling).</p>
-
-    <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3" id="catalog"></div>
-
-    <div class="mt-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Current Order</h2>
-      <ul id="cart" class="mt-2 space-y-1 text-sm"></ul>
-      <div class="mt-3 flex items-center justify-between border-t border-slate-800 pt-3">
-        <span class="text-sm text-slate-400">Total</span>
-        <span id="total" class="text-lg font-semibold">$0.00</span>
-      </div>
-      <div class="mt-4 flex gap-2">
-        <button id="submit" class="flex-1 rounded-md bg-emerald-500 px-4 py-2 font-medium text-slate-950 hover:bg-emerald-400">
-          Submit Order
-        </button>
-        <button id="clear-cart" class="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 hover:border-red-500/50 hover:text-red-300">
-          Clear Cart
-        </button>
-      </div>
-    </div>
-
-    <div id="hitl" class="mt-4 hidden rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
-      <p class="text-sm font-medium text-amber-300">Supervisor HITL approval required — order between $${autoApproveCeiling} and $${denyCeiling}.</p>
-      <div class="mt-3 flex gap-2">
-        <button id="approve" class="rounded-md bg-emerald-500 px-3 py-1.5 text-sm font-medium text-slate-950">Approve</button>
-        <button id="deny" class="rounded-md bg-red-500/80 px-3 py-1.5 text-sm font-medium text-white">Deny</button>
-      </div>
-    </div>
-
-    <div class="mt-6">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Virtual Notification Drawer</h2>
-      <ul id="notifications" class="mt-2 space-y-2 text-sm text-slate-300"></ul>
-    </div>
-  </div>
-</div>
-<script>
-  var SESSION_ID = ${toInlineJson(sessionId)}
-  var PRODUCTS = ${productsJson}
-  var AUTO_APPROVE_CEILING = ${autoApproveCeiling}
-  var DENY_CEILING = ${denyCeiling}
-  var cart = []
-  var orderCounter = 99
-
-  function postOrderEvent(decision, total) {
-    try {
-      window.parent.postMessage({ type: '${ORDER_MESSAGE_TYPE}', sessionId: SESSION_ID, total: total, decision: decision }, '*')
-    } catch (e) {}
-  }
-
-  function renderCatalog() {
-    var catalog = document.getElementById('catalog')
-    catalog.innerHTML = PRODUCTS.map(function (p) {
-      return '<button data-id="' + p.id + '" class="add-btn rounded-lg border border-slate-800 bg-slate-900 p-3 text-left hover:border-emerald-500/60">' +
-        '<div class="font-medium">' + p.name + '</div>' +
-        '<div class="text-sm text-slate-400">$' + p.price.toFixed(2) + '</div></button>'
-    }).join('')
-    Array.prototype.forEach.call(catalog.querySelectorAll('.add-btn'), function (btn) {
-      btn.addEventListener('click', function () {
-        var product = PRODUCTS.filter(function (p) { return p.id === btn.dataset.id })[0]
-        cart.push(product)
-        renderCart()
-      })
-    })
-  }
-
-  function renderCart() {
-    var list = document.getElementById('cart')
-    list.innerHTML = cart.length
-      ? cart.map(function (p, i) {
-          return '<li class="flex items-center justify-between gap-2">' +
-            '<span>' + p.name + '</span>' +
-            '<span class="flex items-center gap-2">' +
-              '<span>$' + p.price.toFixed(2) + '</span>' +
-              '<button data-index="' + i + '" class="remove-btn text-xs text-red-400 hover:text-red-300">Remove</button>' +
-            '</span></li>'
-        }).join('')
-      : '<li class="text-slate-500">No items yet — add something from the catalog.</li>'
-    var total = cart.reduce(function (sum, p) { return sum + p.price }, 0)
-    document.getElementById('total').textContent = '$' + total.toFixed(2)
-    Array.prototype.forEach.call(list.querySelectorAll('.remove-btn'), function (btn) {
-      btn.addEventListener('click', function () {
-        cart.splice(Number(btn.dataset.index), 1)
-        renderCart()
-      })
-    })
-  }
-
-  function notify(message) {
-    var list = document.getElementById('notifications')
-    var li = document.createElement('li')
-    li.className = 'rounded-md border border-slate-800 bg-slate-900 px-3 py-2'
-    li.textContent = message
-    list.insertBefore(li, list.firstChild)
-  }
-
-  function shipOrder() {
-    orderCounter += 1
-    notify('Email: Order shipped — tracking #ORD-' + orderCounter)
-  }
-
-  document.getElementById('submit').addEventListener('click', function () {
-    var total = cart.reduce(function (sum, p) { return sum + p.price }, 0)
-    if (cart.length === 0) return
-    if (total <= AUTO_APPROVE_CEILING) {
-      notify('Policy: total $' + total.toFixed(2) + ' <= $' + AUTO_APPROVE_CEILING + ' — auto-approved.')
-      postOrderEvent('auto_approved', total)
-      shipOrder()
-    } else if (total <= DENY_CEILING) {
-      postOrderEvent('hitl_pending', total)
-      document.getElementById('hitl').classList.remove('hidden')
-    } else {
-      notify('Policy: total $' + total.toFixed(2) + ' > $' + DENY_CEILING + ' — auto-denied.')
-      postOrderEvent('auto_denied', total)
-    }
-  })
-
-  document.getElementById('clear-cart').addEventListener('click', function () {
-    cart = []
-    renderCart()
-  })
-
-  document.getElementById('approve').addEventListener('click', function () {
-    var total = cart.reduce(function (sum, p) { return sum + p.price }, 0)
-    document.getElementById('hitl').classList.add('hidden')
-    notify('Supervisor approved the order.')
-    postOrderEvent('hitl_approved', total)
-    shipOrder()
-  })
-
-  document.getElementById('deny').addEventListener('click', function () {
-    var total = cart.reduce(function (sum, p) { return sum + p.price }, 0)
-    document.getElementById('hitl').classList.add('hidden')
-    notify('Supervisor denied the order.')
-    postOrderEvent('hitl_denied', total)
-  })
-
-  renderCatalog()
-  renderCart()
-</script>`
-}
-
 /**
- * UAT fix: the conversational swarm build used to call
- * `synthesizeOrderEntryApp()` unconditionally, regardless of what domain the
- * discovery interview actually captured — an itinerary/day-plan interview
- * (tasks like "walk the dog", "pick up dry cleaning") got rendered as a
- * shopping cart with a "Submit Order" button, which is simply the wrong
- * shape of app for what was discussed. This is the itinerary counterpart:
- * same catalog-item input shape (`{name, price}` — the discovery interview's
- * one domain-neutral extraction contract, see poInterviewLLM.ts), rendered
- * as a task checklist instead of a cart. Reuses the checkbox
+ * The swarm build's Lead Dev synthesizer (UOW-6.0: the platform's single
+ * supported app-generation domain). Takes the discovery interview's
+ * domain-neutral `{name, price}` catalog-item shape (see poInterviewLLM.ts)
+ * and renders it as a task checklist. Reuses the checkbox
  * strikethrough/progress-badge visual language already established for the
  * Unified Itinerary Synthesizer (appGeneratorPrompt.ts's
  * buildUnifiedItinerarySnippet) rather than inventing a new completion

@@ -8,7 +8,7 @@
  * every other governed action — see policyEngine.ts). The project-level
  * metrics/risks/Linear export are the scoping engagement's own known
  * findings, not something derivable from a single uploaded document — same
- * "canned scenario data" precedent as COOKBOOK_PRESETS/synthesizeOrderEntryApp
+ * "canned scenario data" precedent as COOKBOOK_PRESETS/swarmCodeSynthesizer.ts
  * elsewhere in this codebase. Only `systemsMapped` is cross-checked against
  * the actual ingested record count when a CSV inventory is the file being
  * evaluated, so it doesn't silently drift from fixtures/stackryn/system-matrix.csv.

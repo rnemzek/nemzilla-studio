@@ -255,3 +255,85 @@ both `[data-testid="stackryn-readiness-distribution"]` and
 / 1 MEDIUM donut, at both 1280px and a 375px iPhone-width viewport, with zero
 browser console errors. The throwaway driver script and its screenshots were
 not committed (outside this UOW's file scope).
+
+## UOW-6.0 — Purge Order Entry Domain & Narrow to TODO-Only Micro-App Engine (2026-09-11)
+
+Scope clarified with the Product Owner before touching code: the literal UOW
+spec (a straight "purge OE" pass) undersold the actual ask — Studio now
+supports exactly one app-generation domain, a TODO list, and the other
+non-OE domains (`wfd`/"What's For Dinner", `itinerary`/"Day Planner &
+Entertainment", `b2b-lead-scoring`) are removed too, not just Order Entry.
+The existing itinerary synthesizer (errands + recipe + entertainment
+checklist) is kept and rebranded as the TODO app rather than built from
+scratch — smallest change that satisfies "TODO list micro-app," per PO
+direction.
+
+Two literal items in the UOW's own acceptance criteria turned out to be
+wrong and were **not** applied: `ciso-constraints.txt`/`enterprise-rfp.pdf`
+are Stackryn's own ingest-preset fixture filenames
+(`STACKRYN_INGEST_PRESETS` in `cookbookPresets.ts`), not OE artifacts —
+deleting them would have broken the Stackryn Cockpit the PO explicitly said
+to keep. Verified this by reading `cookbookPresets.ts` and
+`stackrynGovernanceEngine.ts` before touching anything.
+
+Implementation:
+- `src/server/services/domainAgents.ts` — removed the `AI OE` registry
+  entry; `AI TODO` promoted from conditional to `alwaysOn: true` (joins `AI
+  Vendor` as the two unconditional agents). Classifier system prompt reworded
+  from "a vendor's order-entry app" to "a vendor's TODO list app".
+- `src/config/templateRegistry.ts` — `TEMPLATE_REGISTRY` collapsed from 3
+  entries (`order-entry`, `wfd`, `itinerary`) to 1 (`todo`), reusing the old
+  `itinerary` entry's `previewScenario: 'today-itinerary'` wiring.
+- `src/lib/cookbookPresets.ts` — `COOKBOOK_PRESETS` collapsed from 3 entries
+  to 1 (`todo-list`, prompt `'Today Itinerary'`). `STACKRYN_INGEST_PRESETS`
+  untouched.
+- `src/server/prompts/appGeneratorPrompt.ts` — removed
+  `buildAcmeOrderSnippet()`, `B2B_LEAD_SCORING_SNIPPET`, and their
+  `matchScenario()`/`generateAppSnippet()` branches; `SCENARIOS` narrowed to
+  `['today-itinerary', 'default-sandbox']`; `GeneratedApp.policyCheck` field
+  removed (it only ever applied to the now-deleted acme-order path).
+- `src/server/services/swarmCodeSynthesizer.ts` — removed
+  `synthesizeOrderEntryApp()` and its `ORDER_MESSAGE_TYPE` constant;
+  `synthesizeItineraryApp()` kept as the sole synthesizer.
+- `src/server/services/agentStream.ts` — `runSwarmPipeline()`'s
+  `isItineraryDomain` branch removed; Lead Dev now unconditionally calls
+  `synthesizeItineraryApp()`. Classic `runPipeline()`'s now-dead
+  `policyCheck` destructure/branch removed to match the `GeneratedApp` type
+  change.
+- `src/server/services/poInterviewLLM.ts` — `SYSTEM_PROMPT` rewritten:
+  dropped the "greet with both OE and Itinerary paths" instruction and the
+  "order-entry path only" proactive-nudge rule; the AI PO now opens by
+  introducing itself as ready to build a TODO list, with no domain choice to
+  offer.
+- `src/lib/terminalCommands.ts` — `summarizeBundle()`'s printed labels
+  changed from `vendor:`/`catalog items:`/`HITL ceiling:` to
+  `plan:`/`tasks:`/`review ceiling:`.
+- `src/components/ExecutiveShowcaseModal.tsx`, `src/components/Terminal.tsx`,
+  `src/components/AppPreview.tsx` (functional: `DEFAULT_PROMPT` was literally
+  `'ACME Order'`, which would have silently fallen through to
+  `default-sandbox` post-purge — changed to `'Today Itinerary'`),
+  `src/components/SaveRecipeModal.tsx` (placeholder text) — user-facing copy
+  updated to TODO framing.
+- Left untouched per the UOW's own "DO NOT TOUCH: client preview rendering
+  logic" boundary: `src/lib/sandboxStore.ts`, `src/lib/sandboxTemplate.ts`,
+  and `src/server/routes/orders.ts` (the `order_decision` audit endpoint —
+  now unreachable dead code since no generated app emits that postMessage
+  type anymore, but kept as a generic decision-logging endpoint per its
+  updated doc comment rather than ripped out along with its route
+  registration, which those two do-not-touch files are wired into).
+- `scripts/verify-agent-stream.ts`'s `testAppGenerationPrompt()` updated to
+  request `?prompt=Today Itinerary` and assert `scenario ===
+  'today-itinerary'` instead of the deleted `acme-order` case.
+
+Verification: `npx tsc -b` clean across both tsconfig projects; `npm test`
+(`test:sse` + `test:stackryn`) both pass — Stackryn's own suite confirms zero
+collateral damage. Manual headless-browser pass (Playwright, ad hoc driver
+script, not committed): Executive Showcase modal reads "...interactive TODO
+List micro-apps...", Preset Cookbook's Flagship Scenarios shows exactly one
+entry ("TODO List"), Stackryn's "Ingest Project Horizon Bundle" trigger still
+present and unchanged, App Preview's domain badge reads "Domain: TODO List",
+a live swarm build streamed end-to-end with zero browser console errors. The
+Cookbook dropdown's "Saved Runs" history still lists old `acme-order`
+session replays from before this change — expected and left alone, since
+that's an audit trail of past activity, not a preset selector the acceptance
+criteria targeted.

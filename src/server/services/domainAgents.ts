@@ -2,13 +2,13 @@
  * UOW-11 Task 11.5 / UOW-13: the pluggable domain micro-agent registry. Each
  * entry is a self-contained { agent, alwaysOn, description, run } tuple —
  * adding a new domain agent means adding one more registry entry, never
- * touching the dispatcher. `AI Vendor`/`AI OE` are unconditional (every PO
- * interview is fundamentally an order-entry app). Everything else used to be
- * decided by hardcoded substring keyword matching; UOW-13 replaces that with
- * a single real semantic-classification call to Claude Haiku 4.5
- * (classifyRelevantAgents below) — the model judges relevance from context
- * and intent (e.g. a stadium concession stand implies sports relevance even
- * without the literal word "sport"), not string containment.
+ * touching the dispatcher. `AI Vendor`/`AI TODO` are unconditional (every PO
+ * interview is fundamentally a TODO list app — see UOW-6.0). Everything else
+ * used to be decided by hardcoded substring keyword matching; UOW-13
+ * replaces that with a single real semantic-classification call to Claude
+ * Haiku 4.5 (classifyRelevantAgents below) — the model judges relevance from
+ * context and intent (e.g. a stadium concession stand implies sports
+ * relevance even without the literal word "sport"), not string containment.
  */
 import type Anthropic from '@anthropic-ai/sdk'
 import { classifyAnthropicError, getAnthropicClient, HAIKU_MODEL } from './anthropicClient.ts'
@@ -28,7 +28,7 @@ export interface DomainAgentResult {
 
 interface DomainAgentDefinition {
   agent: string
-  /** AI Vendor/AI OE are true unconditionally — see module doc comment. Conditional agents are decided by classifyRelevantAgents(), not a per-agent predicate. */
+  /** AI Vendor/AI TODO are true unconditionally — see module doc comment. Conditional agents are decided by classifyRelevantAgents(), not a per-agent predicate. */
   alwaysOn: boolean
   /** Shown to the classifier model — what this agent's specialty covers. */
   description: string
@@ -47,23 +47,9 @@ const REGISTRY: DomainAgentDefinition[] = [
     }),
   },
   {
-    agent: 'AI OE',
-    alwaysOn: true,
-    description: 'Order entry, cart math, and checkout flows.',
-    run: (ctx) => ({
-      agent: 'AI OE',
-      summary: `Modeled cart math and checkout flow for ${ctx.vendorName}'s order entry app.`,
-      schema: {
-        type: 'orderEntry',
-        cartFields: ['productId', 'quantity', 'lineTotal'],
-        checkoutSteps: ['review', 'submit', 'confirmation'],
-      },
-    }),
-  },
-  {
     agent: 'AI TODO',
-    alwaysOn: false,
-    description: 'Task management and checklist widgets, for vendors whose app involves tracking to-dos or errands.',
+    alwaysOn: true,
+    description: 'Task management and checklist widgets — the core of every TODO list app this platform builds.',
     run: (ctx) => ({
       agent: 'AI TODO',
       summary: `Modeled a task/checklist widget alongside ${ctx.vendorName}'s catalog.`,
@@ -151,7 +137,7 @@ async function classifyRelevantAgents(ctx: DomainAgentContext, candidates: Domai
     const response = await getAnthropicClient().messages.create({
       model: HAIKU_MODEL,
       max_tokens: 512,
-      system: `You classify which optional domain micro-agents are relevant to a vendor's order-entry app, based on its name and catalog. Available agents:\n${candidateList}\n\nMost vendors are relevant to NONE of these — that is the expected, common outcome, not a failure to find something. Think about what the vendor's business actually IS first (a bakery, a hardware store, a stadium concession stand, a fan shop), then mark an agent true only if there's a direct, genuine connection to that specialty — not a loose word association or a stretch. For example: a stadium concession stand selling hot dogs and pretzels has a real connection to sports content, even though the word "sport" never appears; a sports team's fan shop selling jerseys and pennants obviously does too. A bakery, an office-supply store, or a plain hardware store has no real connection to any of these specialties, even if you can imagine a tenuous link — resist that temptation.`,
+      system: `You classify which optional domain micro-agents are relevant to a vendor's TODO list app, based on its name and catalog. Available agents:\n${candidateList}\n\nMost vendors are relevant to NONE of these — that is the expected, common outcome, not a failure to find something. Think about what the vendor's business actually IS first (a bakery, a hardware store, a stadium concession stand, a fan shop), then mark an agent true only if there's a direct, genuine connection to that specialty — not a loose word association or a stretch. For example: a stadium concession stand selling hot dogs and pretzels has a real connection to sports content, even though the word "sport" never appears; a sports team's fan shop selling jerseys and pennants obviously does too. A bakery, an office-supply store, or a plain hardware store has no real connection to any of these specialties, even if you can imagine a tenuous link — resist that temptation.`,
       messages: [
         {
           role: 'user',

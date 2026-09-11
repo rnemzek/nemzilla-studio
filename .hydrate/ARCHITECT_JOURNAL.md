@@ -151,3 +151,55 @@ future addition to `stackrynGovernanceEngine.ts`'s risk copy (the
 `StackrynReadinessCharts.tsx`'s `ADAPTER_PATTERN`/`EOL_PATTERN` regexes for
 accidental cross-matches, or — better — promoted to the real payload field
 described above so the two can't drift.
+
+## UOW-6.0 — Purge Order Entry Domain & Narrow to TODO-Only Micro-App Engine (2026-09-11)
+
+Architectural pivot: this platform's app-generation surface (distinct from
+the separate Stackryn ingestion/cockpit flow, which is untouched) now has
+exactly one domain — TODO list. `TEMPLATE_REGISTRY` (`templateRegistry.ts`)
+and `COOKBOOK_PRESETS` (`cookbookPresets.ts`) both went from 3 entries to 1.
+`appGeneratorPrompt.ts`'s `ScenarioId` union shrank from 4 members to 2
+(`'today-itinerary' | 'default-sandbox'`).
+
+Swarm topology contract (`agentStream.ts`'s `runSwarmPipeline()`) is now a
+fixed backbone: `PO -> Architect -> AI Vendor -> AI TODO -> [optional AI
+Sport/AI SS/AI Food] -> Policy -> Lead Dev`. `AI Vendor` and `AI TODO` are
+both `alwaysOn: true` in `domainAgents.ts`'s `REGISTRY` (the old `AI OE`
+entry is deleted outright, not merged into anything); `AI Sport`/`AI SS`/`AI
+Food` remain conditional via the existing Haiku classification call.
+Lead Dev synthesis is no longer a two-way branch (`synthesizeOrderEntryApp`
+vs `synthesizeItineraryApp`) — `swarmCodeSynthesizer.ts` exports only
+`synthesizeItineraryApp` now, called unconditionally.
+
+Established (kept, not new): `synthesizeItineraryApp()` /
+`buildUnifiedItinerarySnippet()` (the errand + recipe + entertainment
+checklist generator, previously the "itinerary/day-planner" domain's output)
+is now this platform's *only* generated-app shape, doing double duty as "the
+TODO app." No new synthesizer was built — a deliberate PO call to reuse
+working code rather than build a narrower plain-checklist generator from
+scratch.
+
+Data-model note: `PoKnownFields`/`RESPONSE_SCHEMA`
+(`poInterviewLLM.ts`) were **not** changed — `vendorName`/`catalog`/
+`hitlThreshold` remain the one domain-neutral extraction contract, same as
+before this UOW. Only the system prompt's framing text changed (no more
+"pick OE or Itinerary" greeting; the AI PO now assumes TODO list
+unconditionally).
+
+Explicitly preserved despite surface-level name overlap with the purge: the
+Stackryn ingest fixtures `enterprise-rfp.pdf.txt`/`ciso-constraints.txt`/
+`system-matrix.csv` (`STACKRYN_INGEST_PRESETS` in `cookbookPresets.ts`) and
+the entire Stackryn Modernization Cockpit pipeline
+(`stackrynGovernanceEngine.ts`, `stackrynFormatParsers.ts`,
+`routes/stackrynIngest.ts`, the Cockpit panel/charts) — a separate product
+surface from app-generation, confirmed intact by `npm run test:stackryn`
+passing unchanged.
+
+Deliberately left alone (`orders.ts`'s `order_decision` audit endpoint,
+`sandboxStore.ts`'s OE-postMessage relay, `sandboxTemplate.ts`'s
+`SANDBOX_MESSAGE.order` constant): now dead code paths — no generated app
+emits `nemzilla:sandbox-order-decision` anymore — but ripping them out would
+have required touching `sandboxStore.ts`/route registration, which sit
+outside this UOW's file boundary. If a future UOW wants this endpoint gone
+entirely, it needs its own explicit File Touch Boundary grant for
+`sandboxStore.ts`.

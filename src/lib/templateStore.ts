@@ -13,13 +13,12 @@ const [activeTemplateId, setActiveTemplateIdSignal] = createSignal<string>(DEFAU
  * UAT fix: distinguishes "the default template nobody's touched yet" from
  * "the visitor explicitly ran /template" — poInterview.ts only sends the
  * active template's systemPromptOverlay to the AI PO when this is true.
- * Without it, every interview silently got the 'order-entry' overlay's
- * "keep the discovery centered on a vendor/company name..." instruction by
- * default, even for a visitor who never touched /template and just typed
- * "let's make a to-do list" — hijacking the AI PO's own natural-language
- * domain judgment with an overlay nobody asked for. The Swarm Canvas idle
- * preview / App Preview domain badge still default to 'order-entry' for
- * *display* purposes; only the AI PO's conversation is gated on this.
+ * Without it, every interview silently got the default overlay's domain
+ * framing by default, even for a visitor who never touched /template —
+ * hijacking the AI PO's own natural-language domain judgment with an
+ * overlay nobody asked for. The Swarm Canvas idle preview / App Preview
+ * domain badge still default to the registry's first template for *display*
+ * purposes; only the AI PO's conversation is gated on this.
  */
 const [templateExplicitlySet, setTemplateExplicitlySetSignal] = createSignal(false)
 

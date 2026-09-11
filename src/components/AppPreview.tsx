@@ -13,7 +13,7 @@ import { visitorState } from '../lib/visitorStore.ts'
 
 const FLOAT_ID = 'app-preview'
 
-const DEFAULT_PROMPT = 'ACME Order'
+const DEFAULT_PROMPT = 'Today Itinerary'
 
 const STATUS_LABEL: Record<string, string> = {
   idle: 'idle',

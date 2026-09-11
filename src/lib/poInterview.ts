@@ -83,8 +83,8 @@ export interface PoInterviewStep {
 // Mirrors policyEngine.ts's SYSTEM_CEILING.maxOrderThreshold (see
 // AGENTZ-STUDIO-SDK.md section 6A) — not imported directly, since
 // policyEngine.ts lives in the server-only tsconfig project. This is public
-// governance policy, already surfaced in every generated ACME snippet's own
-// UI copy, not a secret.
+// governance policy, already surfaced in every generated app's own UI copy,
+// not a secret.
 export const SYSTEM_ORDER_CEILING = 500
 
 interface PoInterviewApiResponse {
@@ -123,8 +123,7 @@ async function callInterviewApi(
     // discovery prompt for this turn (poInterviewLLM.ts) — but only once
     // the visitor has explicitly run /template. Sending it unconditionally
     // (the original Pass E behavior) meant every interview silently got the
-    // default 'order-entry' template's overlay whether the visitor asked
-    // for an order-entry app or not, overriding the AI PO's own
+    // default template's overlay, overriding the AI PO's own
     // natural-language domain judgment for anyone who never touched
     // /template — a real bug, not the intended behavior.
     const visitor = getVisitor()

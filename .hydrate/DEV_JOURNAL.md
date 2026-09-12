@@ -337,3 +337,76 @@ Cookbook dropdown's "Saved Runs" history still lists old `acme-order`
 session replays from before this change — expected and left alone, since
 that's an audit trail of past activity, not a preset selector the acceptance
 criteria targeted.
+
+## UOW-6.1 — Zip Code Location Provider & Geolocation Strategy (2026-09-12)
+
+Implementation:
+- `src/server/services/locationProviderSnippet.ts` (new) — one shared
+  client-side location provider block (badge markup, zip-entry modal markup,
+  and the behavior script) injected into both TODO app generators rather
+  than duplicating it in each. On load: tries `navigator.geolocation`; on
+  denial/timeout/absence falls back to a zip-entry modal pre-filled with the
+  last saved zip, defaulting to `94103` ("San Francisco, CA"). Persists
+  `{zip, lat, lng, label}` via the same dual-path convention
+  `buildUnifiedItinerarySnippet`'s `persistState` already uses (relay to
+  `window.parent` over postMessage + this document's own `localStorage`,
+  each independently try/caught — see that function's doc comment for why
+  both paths are needed). `attachLocationToTaskEvent(taskId, completed)`
+  dispatches a `nemzilla:task-event` CustomEvent carrying the active
+  location — this app has no "add task" UI (only checkbox-toggle
+  completion; confirmed via a targeted search before assuming otherwise),
+  so the checkbox event is the closest existing stand-in for the "task
+  creation event" the UOW spec asks to carry location metadata on.
+- `src/server/services/swarmCodeSynthesizer.ts` (`synthesizeItineraryApp`)
+  and `src/server/prompts/appGeneratorPrompt.ts`
+  (`buildUnifiedItinerarySnippet`) — both wired to the shared snippet:
+  badge next to `progress-badge`, modal appended to the outer wrapper,
+  script block + `initLocationProvider()` call appended, and
+  `attachLocationToTaskEvent()` added to each checkbox `change` handler.
+  Each file mirrors the two new `SANDBOX_MESSAGE` type strings as local
+  consts (`LOCATION_STATE_MESSAGE_TYPE`/`RESTORE_LOCATION_STATE_MESSAGE_TYPE`)
+  rather than importing `sandboxTemplate.ts` directly — `src/lib` isn't in
+  `tsconfig.node.json`'s project (only a few files are explicitly
+  whitelisted there), so `src/server` code can't import it, matching the
+  existing `ITINERARY_STATE_MESSAGE_TYPE` mirroring convention already in
+  `appGeneratorPrompt.ts`.
+- `src/lib/sandboxTemplate.ts` — added `SANDBOX_MESSAGE.locationState` /
+  `restoreLocationState`, mirroring the existing `itineraryState` pair.
+- `src/lib/sandboxStore.ts` — new `locationLabel: string | null` field on
+  `SandboxState` (unlike `domainLabel`, never reset per generated app —
+  it's the visitor's own device-level active location, not app-scoped);
+  `persistLocationState`/`loadLocationLabel`/`locationLabelFrom` hoisted to
+  module scope (not closed over `frame`/`state`) so they're available
+  during the initial `createStore(...)` call — an earlier draft defined
+  them further down in `createSandboxStore` and hit a real bug caught by
+  browser verification: a `ReferenceError` (temporal dead zone) accessing
+  `LOCATION_STORAGE_KEY` before its `const` initializer ran.
+  `restoreLocationState()` (needs `frame`) stays inside the function
+  alongside `restoreItineraryState`, sent on the same `rendered` message.
+- `src/components/AppPreview.tsx` — new `📍 <label>` badge in the Preview
+  Frame header next to the "Domain: X" badge, guarded by
+  `<Show when={sandbox.state.locationLabel}>`. Also added
+  `allow="geolocation"` to the sandboxed `<iframe>` — without it, a
+  sandboxed iframe's Permissions Policy blocks `navigator.geolocation`
+  outright (a browser-level policy violation, not a JS exception), which
+  browser verification caught as an unexpected `console.error`; the app's
+  own fallback-on-denial logic still worked either way, but this lets a
+  real geolocation permission prompt actually reach the user instead of
+  being silently blocked.
+- `scripts/verify-location-provider.ts` (new) + `package.json`'s `test`
+  script extended to `test:sse && test:stackryn && test:location` — asserts
+  the `?prompt=Today Itinerary` generated app's HTML/JS includes the badge,
+  modal, zip input, `94103` default, `nemzilla-location-state` storage key,
+  a `navigator.geolocation` call, the postMessage relay type, and
+  `attachLocationToTaskEvent`.
+
+Verification: `npx tsc -b` clean across both tsconfig projects; `npm test`
+(`test:sse` + `test:stackryn` + `test:location`) all pass, 3/3 suites.
+Manual headless-browser pass (Playwright, ad hoc driver script, not
+committed) against the boot-demo TODO app: badge shows `📍 94103 (SF)` on
+load; geolocation is denied in the sandboxed headless context, which
+correctly auto-opens the zip modal; saving `90210` updates the badge to
+`📍 90210` and the outer Preview Frame header immediately mirrors it;
+tapping the badge again reopens the modal pre-filled with the current zip;
+zero browser console errors after adding `allow="geolocation"` to the
+iframe.

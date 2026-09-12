@@ -203,3 +203,45 @@ have required touching `sandboxStore.ts`/route registration, which sit
 outside this UOW's file boundary. If a future UOW wants this endpoint gone
 entirely, it needs its own explicit File Touch Boundary grant for
 `sandboxStore.ts`.
+
+## UOW-6.1 — Zip Code Location Provider & Geolocation Strategy (2026-09-12)
+
+New contract: `SANDBOX_MESSAGE.locationState` / `restoreLocationState`
+(`sandboxTemplate.ts`) — a generated TODO app relays its active
+`{zip, lat?, lng?, label}` location up to the parent the same way
+`itineraryState` already relays checkbox completion; the parent persists it
+to real-origin `localStorage` (`nemzilla-studio:location-state`) and mirrors
+`label` into `SandboxState.locationLabel` for the Preview Frame header
+badge. `restoreLocationState` is sent back down once per `rendered`, so a
+refreshed/re-generated preview restores the visitor's last zip/coords
+instead of re-prompting.
+
+Established abstraction: `src/server/services/locationProviderSnippet.ts` —
+a single shared client-code-gen module (badge markup, modal markup,
+behavior script) consumed by both TODO app generators
+(`swarmCodeSynthesizer.ts`'s conversational/swarm path and
+`appGeneratorPrompt.ts`'s template-preview path), so the two independent
+generation paths render byte-identical location UI/behavior instead of
+drifting. Both generators still mirror the two new `SANDBOX_MESSAGE` type
+strings as local string constants rather than importing `sandboxTemplate.ts`
+— confirmed via `tsconfig.node.json` that `src/lib` isn't part of the node
+project (aside from a short explicit whitelist), so `src/server` genuinely
+cannot import it; this was already this codebase's convention for
+`itineraryState`/`restoreItineraryState`, now extended consistently.
+
+Trade-off: `locationLabel` on `SandboxState` is treated as visitor/device-
+scoped state (seeded from `localStorage` at store creation, never reset by
+`setCode`/`connectToStream`), deliberately unlike `domainLabel` which is
+per-generated-app and resets on every new build. A generated app's location
+is conceptually "where the visitor is," not a property of which app happens
+to be on screen, so it should survive switching between generated apps in
+the same session.
+
+Gotcha (caught by browser verification, not `tsc`/`npm test`): a sandboxed
+`<iframe sandbox="allow-scripts">` blocks `navigator.geolocation` entirely
+via the Permissions Policy the `sandbox` attribute implies — a policy
+violation logged to the console, not a JS exception the app's own
+try/catch or geolocation error-callback ever sees. Fixed by adding
+`allow="geolocation"` to the iframe in `AppPreview.tsx`; the app's
+denial/fallback behavior was already correct either way, but without this
+attribute a real permission grant could never reach the visitor at all.

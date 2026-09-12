@@ -27,6 +27,16 @@ export const SANDBOX_MESSAGE = {
   itineraryState: 'nemzilla:sandbox-itinerary-state',
   /** Parent -> child: sent once after `rendered`, with whatever was previously saved via `itineraryState`, so the child can re-check its own boxes. */
   restoreItineraryState: 'nemzilla:sandbox-restore-itinerary-state',
+  /**
+   * UOW-6.1: the generated TODO app's active location (zip code or resolved
+   * geolocation) relayed to the parent the same way `itineraryState` is —
+   * the sandboxed child's own `localStorage` doesn't survive a reload (see
+   * `itineraryState`'s doc comment above), so the real-origin parent persists
+   * it and also mirrors it into the Preview Frame header's location badge.
+   */
+  locationState: 'nemzilla:sandbox-location-state',
+  /** Parent -> child: sent once after `rendered`, with whatever was previously saved via `locationState`, so the child can restore its active zip/coords instead of re-prompting. */
+  restoreLocationState: 'nemzilla:sandbox-restore-location-state',
 } as const
 
 /**

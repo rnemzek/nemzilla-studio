@@ -1,9 +1,13 @@
 import { ACTION_KIT_REGISTRY } from '../../lib/actionKit.ts'
 import type { UnifiedItineraryPayload } from '../../types/itinerary.ts'
+import { buildLocationBadgeMarkup, buildLocationModalMarkup, buildLocationProviderScript } from '../services/locationProviderSnippet.ts'
 
 // Mirrors SANDBOX_MESSAGE.itineraryState/restoreItineraryState in sandboxTemplate.ts.
 const ITINERARY_STATE_MESSAGE_TYPE = 'nemzilla:sandbox-itinerary-state'
 const RESTORE_ITINERARY_STATE_MESSAGE_TYPE = 'nemzilla:sandbox-restore-itinerary-state'
+// Mirrors SANDBOX_MESSAGE.locationState/restoreLocationState in sandboxTemplate.ts.
+const LOCATION_STATE_MESSAGE_TYPE = 'nemzilla:sandbox-location-state'
+const RESTORE_LOCATION_STATE_MESSAGE_TYPE = 'nemzilla:sandbox-restore-location-state'
 
 /** Mirrors swarmCodeSynthesizer.ts's escapeHtml/toInlineJson — duplicated rather than imported since src/server and src/lib sit in separate tsconfig projects. */
 function escapeHtml(text: string): string {
@@ -179,7 +183,10 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
   <div class="mx-auto max-w-3xl">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h1 class="text-2xl font-bold">✨ ${safeTitle}</h1>
-      <span id="progress-badge" class="whitespace-nowrap rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 transition-all">0/0 Completed</span>
+      <div class="flex flex-wrap items-center gap-2">
+        ${buildLocationBadgeMarkup()}
+        <span id="progress-badge" class="whitespace-nowrap rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 transition-all">0/0 Completed</span>
+      </div>
     </div>
     <p class="mt-1 text-sm text-slate-400">Unified Itinerary Synthesizer — errands, dinner, and tonight's entertainment in one plan.</p>
 
@@ -200,6 +207,7 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
     </div>
   </div>
 </div>
+${buildLocationModalMarkup()}
 <script>
   var TASKS = ${tasksJson}
   var ITINERARY_STATE_TYPE = '${ITINERARY_STATE_MESSAGE_TYPE}'
@@ -331,6 +339,7 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
         renderErrands()
         updateProgressBadge()
         persistState()
+        attachLocationToTaskEvent(e.target.id, e.target.checked)
       })
     })
   }
@@ -370,6 +379,7 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
         renderRecipe()
         updateProgressBadge()
         persistState()
+        attachLocationToTaskEvent(e.target.id, e.target.checked)
       })
     })
   }
@@ -416,11 +426,12 @@ function buildUnifiedItinerarySnippet(payload: UnifiedItineraryPayload): string 
   // that context's own localStorage never actually persisted across the
   // reload that just happened (see the comment on persistState() above).
   applyState(loadOwnLocalStorage())
-
+${buildLocationProviderScript(LOCATION_STATE_MESSAGE_TYPE, RESTORE_LOCATION_STATE_MESSAGE_TYPE)}
   renderErrands()
   renderRecipe()
   updateProgressBadge()
   renderEntertainment(entertainmentTask ? entertainmentTask.title : "Tonight's Game")
+  initLocationProvider()
 </script>`
 }
 

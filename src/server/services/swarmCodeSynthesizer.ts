@@ -7,6 +7,12 @@
  * actual interview data instead of a fixed scenario template.
  */
 import type { DomainAgentResult } from './domainAgents.ts'
+import { buildLocationBadgeMarkup, buildLocationModalMarkup, buildLocationProviderScript } from './locationProviderSnippet.ts'
+
+// Mirrors SANDBOX_MESSAGE.locationState/restoreLocationState in sandboxTemplate.ts
+// (src/lib isn't in tsconfig.node.json's project, so src/server can't import it directly).
+const LOCATION_STATE_MESSAGE_TYPE = 'nemzilla:sandbox-location-state'
+const RESTORE_LOCATION_STATE_MESSAGE_TYPE = 'nemzilla:sandbox-restore-location-state'
 
 export interface SwarmCatalogItem {
   name: string
@@ -65,7 +71,10 @@ export function synthesizeItineraryApp(
   <div class="mx-auto max-w-2xl">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h1 class="text-2xl font-bold">✨ ${safePlan}</h1>
-      <span id="progress-badge" class="whitespace-nowrap rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 transition-all">0/${initialTotal} Completed</span>
+      <div class="flex flex-wrap items-center gap-2">
+        ${buildLocationBadgeMarkup()}
+        <span id="progress-badge" class="whitespace-nowrap rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300 transition-all">0/${initialTotal} Completed</span>
+      </div>
     </div>
     <p class="mt-1 text-sm text-slate-400">Built by ${dispatchedLabel} — a task checklist with a spending threshold check.</p>
     <p class="mt-1 text-xs text-slate-500">Governance: any single task over $${approvalThreshold} is flagged for review &middot; $${systemCeiling} system ceiling.</p>
@@ -76,6 +85,7 @@ export function synthesizeItineraryApp(
     </div>
   </div>
 </div>
+${buildLocationModalMarkup()}
 <script>
   var TASKS = ${tasksJson}
   var APPROVAL_THRESHOLD = ${approvalThreshold}
@@ -136,11 +146,13 @@ export function synthesizeItineraryApp(
         if (item) item.completed = e.target.checked
         renderTasks()
         updateProgressBadge()
+        attachLocationToTaskEvent(e.target.id, e.target.checked)
       })
     })
   }
-
+${buildLocationProviderScript(LOCATION_STATE_MESSAGE_TYPE, RESTORE_LOCATION_STATE_MESSAGE_TYPE)}
   renderTasks()
   updateProgressBadge()
+  initLocationProvider()
 </script>`
 }

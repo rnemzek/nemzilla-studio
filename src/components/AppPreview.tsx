@@ -156,6 +156,11 @@ export default function AppPreview() {
           <span class="text-text-muted">
             Domain: <span class="font-medium text-text">{sandbox.state.domainLabel ?? activeTemplate().name}</span>
           </span>
+          <Show when={sandbox.state.locationLabel}>
+            <span class="text-text-muted">
+              📍 <span class="font-medium text-text">{sandbox.state.locationLabel}</span>
+            </span>
+          </Show>
           <div class="flex items-center overflow-hidden rounded border border-border">
             <button
               type="button"
@@ -265,6 +270,7 @@ export default function AppPreview() {
               ref={frameRef}
               src={SANDBOX_FRAME_PATH}
               sandbox="allow-scripts"
+              allow="geolocation"
               title="App sandbox preview"
               class="h-full w-full"
             />

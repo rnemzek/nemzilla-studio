@@ -8,9 +8,10 @@
     "build": "tsc -b && vite build",
     "start": "tsx server.ts",
     "preview": "vite preview",
-    "test": "npm run test:sse && npm run test:stackryn",
+    "test": "npm run test:sse && npm run test:stackryn && npm run test:location",
     "test:sse": "tsx scripts/verify-agent-stream.ts",
-    "test:stackryn": "tsx scripts/verify-stackryn-ingest.ts"
+    "test:stackryn": "tsx scripts/verify-stackryn-ingest.ts",
+    "test:location": "tsx scripts/verify-location-provider.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.113.0",

@@ -24,6 +24,14 @@ export interface SandboxState {
    * pre-existing behavior for template previews/boot-demo/Cookbook.
    */
   domainLabel: string | null
+  /**
+   * UOW-6.1: mirrors the generated TODO app's active Zip Code / Geolocation
+   * badge into the Preview Frame header. Unlike `domainLabel`, this isn't
+   * reset per generated app — it reflects the visitor's own active location
+   * (device-level, not app-level), so it survives `setCode`/a fresh swarm
+   * build and is seeded from localStorage on store creation.
+   */
+  locationLabel: string | null
 }
 
 export interface SandboxStore {
@@ -119,6 +127,35 @@ function persistSandboxCode(code: string, domainLabel: string | null): void {
   }
 }
 
+const LOCATION_STORAGE_KEY = 'nemzilla-studio:location-state'
+
+/** Extracts the display label from the generated TODO app's `{zip, lat, lng, label}` location state — see locationProviderSnippet.ts. */
+function locationLabelFrom(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null
+  const label = (value as { label?: unknown }).label
+  return typeof label === 'string' && label ? label : null
+}
+
+/** Persists the generated app's active location to this (real-origin) page's own localStorage — same rationale as `persistItineraryState` below (the sandboxed iframe's own storage doesn't survive a reload). */
+function persistLocationState(locationState: unknown): void {
+  try {
+    localStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(locationState))
+  } catch (err) {
+    console.error('sandboxStore: failed to persist location state', err)
+  }
+}
+
+/** Seeds the header badge's initial label on store creation, before any generated app has had a chance to report one over postMessage. */
+function loadLocationLabel(): string | null {
+  try {
+    const raw = localStorage.getItem(LOCATION_STORAGE_KEY)
+    return raw ? locationLabelFrom(JSON.parse(raw)) : null
+  } catch (err) {
+    console.error('sandboxStore: failed to read saved location state', err)
+    return null
+  }
+}
+
 export function createSandboxStore(initialCode = ''): SandboxStore {
   const restored = loadStoredSandboxCode()
   const [state, setState] = createStore<SandboxState>({
@@ -127,6 +164,7 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
     tab: 'preview',
     errorMessage: null,
     domainLabel: restored?.domainLabel ?? null,
+    locationLabel: loadLocationLabel(),
   })
 
   let frame: HTMLIFrameElement | null = null
@@ -262,6 +300,20 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
     }, (err) => console.error('sandboxStore: order event relay failed', err))
   }
 
+  /** Sent once the child confirms it has fully rendered, so it can restore its active zip/coords instead of re-prompting for geolocation. */
+  function restoreLocationState() {
+    if (!frame?.contentWindow) return
+    let saved: unknown = null
+    try {
+      const raw = localStorage.getItem(LOCATION_STORAGE_KEY)
+      saved = raw ? JSON.parse(raw) : null
+    } catch (err) {
+      console.error('sandboxStore: failed to read saved location state', err)
+    }
+    if (!saved) return
+    frame.contentWindow.postMessage({ type: SANDBOX_MESSAGE.restoreLocationState, state: saved }, '*')
+  }
+
   const ITINERARY_STORAGE_KEY = 'nemzilla-studio:itinerary-state'
 
   /** Persists the Unified Itinerary snippet's checkbox state to this (real-origin) page's own localStorage — see SANDBOX_MESSAGE.itineraryState's doc comment for why this can't happen inside the sandboxed iframe itself. */
@@ -300,6 +352,7 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
       case SANDBOX_MESSAGE.rendered:
         setState({ status: 'ready', errorMessage: null })
         restoreItineraryState()
+        restoreLocationState()
         // domainLabel is only ever non-null for a custom swarm build (see
         // connectSwarmGenerator below) — a template-preview build leaves it
         // null and relies on the header badge's own `?? activeTemplate().name`
@@ -319,6 +372,10 @@ export function createSandboxStore(initialCode = ''): SandboxStore {
         break
       case SANDBOX_MESSAGE.itineraryState:
         persistItineraryState(data.state)
+        break
+      case SANDBOX_MESSAGE.locationState:
+        persistLocationState(data.state)
+        setState('locationLabel', locationLabelFrom(data.state))
         break
     }
   }

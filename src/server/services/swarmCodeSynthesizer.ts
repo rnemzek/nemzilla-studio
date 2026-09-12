@@ -8,6 +8,7 @@
  */
 import type { DomainAgentResult } from './domainAgents.ts'
 import { buildLocationBadgeMarkup, buildLocationModalMarkup, buildLocationProviderScript } from './locationProviderSnippet.ts'
+import { buildTaskSyncScript } from './taskSyncSnippet.ts'
 
 // Mirrors SANDBOX_MESSAGE.locationState/restoreLocationState in sandboxTemplate.ts
 // (src/lib isn't in tsconfig.node.json's project, so src/server can't import it directly).
@@ -147,12 +148,20 @@ ${buildLocationModalMarkup()}
         renderTasks()
         updateProgressBadge()
         attachLocationToTaskEvent(e.target.id, e.target.checked)
+        broadcastTaskState()
       })
     })
   }
+
+  function onSyncStateApplied() {
+    renderTasks()
+    updateProgressBadge()
+  }
 ${buildLocationProviderScript(LOCATION_STATE_MESSAGE_TYPE, RESTORE_LOCATION_STATE_MESSAGE_TYPE)}
+${buildTaskSyncScript()}
   renderTasks()
   updateProgressBadge()
   initLocationProvider()
+  initTaskSync()
 </script>`
 }

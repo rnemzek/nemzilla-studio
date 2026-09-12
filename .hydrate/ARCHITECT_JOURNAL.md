@@ -245,3 +245,49 @@ try/catch or geolocation error-callback ever sees. Fixed by adding
 `allow="geolocation"` to the iframe in `AppPreview.tsx`; the app's
 denial/fallback behavior was already correct either way, but without this
 attribute a real permission grant could never reach the visitor at all.
+
+## UOW-6.2 — Real-Time Multi-Device Sync (Room-Based SSE Pub/Sub) (2026-09-12)
+
+New contract: `GET /api/sync/:roomId` (SSE — emits a `state` event
+`{tasks}` immediately with the room's last-known state if any, then again
+on every subsequent broadcast) and `POST /api/sync/:roomId` (`{tasks}` →
+fan out to every subscriber of that room). Both backed by a new in-memory,
+per-room pub/sub (`syncRoomManager.ts`) — the first keyed/multi-room
+broadcast primitive in this codebase; `sessionManager.ts`'s existing
+subscribe/broadcastFrame pair is global (one build at a time), so it
+couldn't be reused directly, but the new module mirrors its exact
+subscribe/notify shape.
+
+Design decision: `roomId` = the published app's own `/share/:slug` slug,
+not a separately generated id. A generated app's sync script resolves its
+room purely client-side at request time (`?room=` query param, falling
+back to parsing the `/share/<slug>` path) rather than the server
+templating a room id into the stored `htmlPayload` at publish time — this
+keeps `publishedAppStore.ts` completely untouched (its stored HTML stays
+generic/slug-independent) and means the exact same generated document
+works correctly under whatever slug it's later served at.
+
+Established abstraction: `taskSyncSnippet.ts` — deliberately shape-agnostic
+about the generator's `TASKS` structure (the swarm and template-preview
+generators use different shapes), so it only ever relays whole-array JSON
+snapshots rather than typed per-action events (`add`/`toggle`/`delete`).
+This is a real simplification versus the UOW's literal per-action-type
+framing: since neither generator has an "add task"/"delete task" UI yet
+(confirmed absent in UOW-6.1), a full-state broadcast already covers every
+action that exists today (checkbox toggle) and requires no changes at all
+if add/delete UI is added later — the new UI would just mutate `TASKS` and
+call the same `broadcastTaskState()`.
+
+Gotcha (caught only by browser verification — clean `tsc`/`npm test` the
+whole time): `server.ts`'s dev-mode request router forwarded only `/api`
+and `/sandbox-frame` paths to Hono; `/share/:slug` (added back in an
+earlier UOW) fell through to Vite's SPA middleware and silently served the
+Studio shell instead of the published app. This means the entire
+publish/share feature has likely never actually worked under `npm run dev`
+— only in a production build (`server.ts`'s `serveStatic` fallback branch)
+— since nothing before this UOW needed to *load* a published app locally
+(publishing and viewing the resulting link were never both exercised in
+the same dev session). Fixed by adding `/share` to the same passthrough
+condition as `/sandbox-frame`. Worth flagging to the Product Owner: any
+other future feature that depends on opening a `/share/:slug` link during
+local development would have hit this same silent failure.

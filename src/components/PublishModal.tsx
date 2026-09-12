@@ -38,7 +38,12 @@ export default function PublishModal() {
         visitorId: visitor.visitorId,
         handle: visitor.handle,
       })
-      const fullUrl = `${window.location.origin}${result.shareUrl}`
+      // UOW-6.2: `?room=<slug>` opens the published page directly into its
+      // multi-device sync room (see taskSyncSnippet.ts) — redundant with the
+      // `/share/:slug` path segment the sync script already falls back to
+      // parsing, but this satisfies the literal "link containing the roomId"
+      // shape the QR/share link is expected to carry.
+      const fullUrl = `${window.location.origin}${result.shareUrl}?room=${encodeURIComponent(result.slug)}`
       setShareUrl(fullUrl)
       setQrDataUrl(await QRCode.toDataURL(fullUrl, { margin: 1, width: 220 }))
     } catch (err) {

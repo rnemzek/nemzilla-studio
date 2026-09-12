@@ -1,6 +1,7 @@
 import { ACTION_KIT_REGISTRY } from '../../lib/actionKit.ts'
 import type { UnifiedItineraryPayload } from '../../types/itinerary.ts'
 import { buildLocationBadgeMarkup, buildLocationModalMarkup, buildLocationProviderScript } from '../services/locationProviderSnippet.ts'
+import { buildTaskSyncScript } from '../services/taskSyncSnippet.ts'
 
 // Mirrors SANDBOX_MESSAGE.itineraryState/restoreItineraryState in sandboxTemplate.ts.
 const ITINERARY_STATE_MESSAGE_TYPE = 'nemzilla:sandbox-itinerary-state'
@@ -340,6 +341,7 @@ ${buildLocationModalMarkup()}
         updateProgressBadge()
         persistState()
         attachLocationToTaskEvent(e.target.id, e.target.checked)
+        broadcastTaskState()
       })
     })
   }
@@ -380,8 +382,15 @@ ${buildLocationModalMarkup()}
         updateProgressBadge()
         persistState()
         attachLocationToTaskEvent(e.target.id, e.target.checked)
+        broadcastTaskState()
       })
     })
+  }
+
+  function onSyncStateApplied() {
+    renderErrands()
+    renderRecipe()
+    updateProgressBadge()
   }
 
   var entertainmentTask = TASKS.filter(function (t) { return t.category === 'entertainment' })[0]
@@ -427,11 +436,13 @@ ${buildLocationModalMarkup()}
   // reload that just happened (see the comment on persistState() above).
   applyState(loadOwnLocalStorage())
 ${buildLocationProviderScript(LOCATION_STATE_MESSAGE_TYPE, RESTORE_LOCATION_STATE_MESSAGE_TYPE)}
+${buildTaskSyncScript()}
   renderErrands()
   renderRecipe()
   updateProgressBadge()
   renderEntertainment(entertainmentTask ? entertainmentTask.title : "Tonight's Game")
   initLocationProvider()
+  initTaskSync()
 </script>`
 }
 

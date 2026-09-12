@@ -410,3 +410,83 @@ correctly auto-opens the zip modal; saving `90210` updates the badge to
 tapping the badge again reopens the modal pre-filled with the current zip;
 zero browser console errors after adding `allow="geolocation"` to the
 iframe.
+
+## UOW-6.2 — Real-Time Multi-Device Sync for the TODO Micro-App (2026-09-12)
+
+Design: room id = the published app's own `/share/:slug` slug — already
+unique, URL-safe, and known to every device that opens the QR/share link, so
+no new id-generation scheme was needed. The sync script (injected into the
+generated app) resolves its room id purely client-side, at runtime, from
+`?room=` (falls back to parsing the `/share/<slug>` path segment) — nothing
+is templated into the stored HTML at publish time, so the same generic
+`htmlPayload` works for any slug it's later served under.
+
+Implementation:
+- `src/server/services/syncRoomManager.ts` (new) — an in-memory,
+  per-room pub/sub (`Map<roomId, {subscribers, lastTasks}>`), the same
+  shape as `sessionManager.ts`'s existing global subscribe/broadcastFrame
+  pair, just keyed by room. Deliberately not persisted (unlike
+  `publishedAppStore.ts`'s file-backed app content) — a sync room is a live
+  broadcast channel, not durable state; losing it on a restart is fine for
+  demo scope.
+- `src/server/routes/syncStream.ts` (new) — `GET /api/sync/:roomId` (SSE,
+  mirrors `agentStream.ts`'s `serveSessionStream`: seed a `pending` queue
+  with the room's last-known task state, then subscribe synchronously with
+  no `await` between so a concurrent broadcast can't fall through the gap)
+  and `POST /api/sync/:roomId` (`{tasks}` → `broadcastToRoom`, 400 on a
+  missing `tasks` field or malformed JSON). Wired into `src/server/app.ts`.
+- `src/server/services/taskSyncSnippet.ts` (new, kept separate from
+  `locationProviderSnippet.ts` per this UOW's own DO-NOT-TOUCH boundary) —
+  the shared client sync listener/broadcaster, injected into both TODO
+  generators. Deliberately generic about `TASKS`' shape (the two generators
+  structure it differently) — it only ever relays the array as an opaque
+  JSON blob; each generator supplies its own `onSyncStateApplied()` to
+  re-render after a remote update replaces `TASKS` wholesale.
+  `broadcastTaskState()` dedupes on a `JSON.stringify(TASKS)` comparison so
+  applying a remote update never immediately re-broadcasts the same state
+  back (no ping-pong). Every network call (`fetch`, `new EventSource(...)`)
+  is wrapped in try/catch with silent no-ops on failure — the AC 4
+  requirement ("actions continue to save locally... without throwing") — an
+  aborted/blocked sync channel never touches the local `TASKS` mutation or
+  the generator's own existing local persistence (e.g. `appGeneratorPrompt`'s
+  `persistState()`), confirmed via a Playwright device with `/api/sync/**`
+  routed to fail: the checkbox still toggled locally with zero uncaught
+  exceptions.
+- `src/server/services/swarmCodeSynthesizer.ts` /
+  `src/server/prompts/appGeneratorPrompt.ts` — `broadcastTaskState()` added
+  to each checkbox `change` handler (alongside the existing
+  `attachLocationToTaskEvent()` call from UOW-6.1), an `onSyncStateApplied()`
+  re-render function defined in each, and `initTaskSync()` called on load
+  alongside `initLocationProvider()`.
+- `src/components/PublishModal.tsx` — the QR/share URL now appends
+  `?room=<slug>` (redundant with the path segment the sync script already
+  falls back to, but matches the UOW's literal "link containing the
+  roomId" wording).
+- `server.ts` — **pre-existing bug fix, caught by browser verification, not
+  `tsc`/`npm test`**: the dev-mode request router only forwarded `/api` and
+  `/sandbox-frame` to Hono; `/share/:slug` silently fell through to Vite's
+  SPA middleware and served the Studio shell instead of the published app
+  (only ever worked in production, via `server.ts`'s `serveStatic`
+  fallback — nothing previously needed to load a published app during
+  local dev, so this had never surfaced). Added `/share` to the same
+  passthrough condition.
+- `scripts/verify-sync-room.ts` (new) + `package.json`'s `test` script
+  extended to `... && npm run test:sync` — two concurrent SSE subscribers
+  both receive a broadcast task update in real time; a late-joining
+  subscriber immediately receives the room's last-known state; a malformed
+  broadcast (missing `tasks`, invalid JSON) is rejected with 400; the
+  generated app's HTML/JS includes the sync client markers
+  (`SYNC_ROOM_ID`, `/api/sync/`, `new EventSource(`, `broadcastTaskState`,
+  `initTaskSync`).
+
+Verification: `npx tsc -b` clean across both tsconfig projects; `npm test`
+(`test:sse` + `test:stackryn` + `test:location` + `test:sync`) all pass,
+4/4 suites. Manual two-device Playwright pass (ad hoc driver script, not
+committed): Studio publishes the boot-demo TODO app, the resulting
+`?room=`-suffixed share link opened in two independent browser pages syncs
+a checkbox toggle from one to the other in real time with zero console
+errors on the Studio page or either device; a third device with
+`/api/sync/**` deliberately routed to fail still toggled its task locally
+with zero uncaught exceptions (the only console noise was Chromium's own
+"resource failed to load" notice for the intentionally-blocked request, not
+an application error).
